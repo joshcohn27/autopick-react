@@ -110,7 +110,16 @@ export function useAutopick() {
 
   let suggestion: Suggestion | null = null;
   if (rankings && activeTeamIndex !== null) {
-    suggestion = computeSuggestion(activeTeamIndex, picks, rankings);
+    // The anti-reach guardrail needs to know the current round/overall pick
+    // number. onClock is normally where that comes from; it can be null
+    // while a suggestion is still requested -- e.g. a manual override
+    // selected after the auto-detected draft state already reads as
+    // complete. Round 16 + Infinity makes maxAllowedGap(16) return null (no
+    // cap), so the guardrail goes inert rather than gating against a
+    // meaningless pick number.
+    const round = onClock ? onClock.round : 16;
+    const pickNumber = onClock ? onClock.pickNumber : Infinity;
+    suggestion = computeSuggestion(activeTeamIndex, picks, rankings, round, pickNumber);
   }
 
   // Straight ADP board (not roster-aware) for reference, same as scrolling

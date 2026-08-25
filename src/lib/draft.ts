@@ -218,18 +218,84 @@ function summarizeSlots(openSlots: SlotInstance[]): Record<string, number> {
   }, {});
 }
 
+// Round-based anti-reach guardrail: how far past the current overall pick
+// number a player's blended ADP is allowed to sit before that pick counts
+// as too much of a reach to suggest as the primary. Tighter early (rounds
+// 1-4), looser mid-draft (5-10), off entirely late (11-16, null = no cap)
+// -- by then bench/depth picks are inherently unpredictable and shouldn't
+// be second-guessed by ADP.
+function maxAllowedGap(round: number): number | null {
+  if (round <= 4) return 10;
+  if (round <= 10) return 20;
+  return null;
+}
+
+// Scans a position's own rank-ordered list (already drafted players
+// filtered out) for the first entry whose ADP gap is within the cap.
+// maxGap === null means the guardrail is off for this round -- return
+// rank #1 immediately without even looking at ADP, so a late-round pick
+// behaves exactly as it did before this guardrail existed. Returns null if
+// nobody in the list satisfies the cap (caller decides the fallback).
+function findCompliantCandidate(list: RankingEntry[], maxGap: number | null, currentPickNumber: number): RankingEntry | null {
+  if (maxGap === null) return list[0] ?? null;
+  for (const candidate of list) {
+    const { adp } = lookupAdp(candidate.player);
+    if (adp - currentPickNumber <= maxGap) return candidate;
+  }
+  return null;
+}
+
+// Builds the full SuggestionCandidate shape for whichever entry was chosen
+// from `list` (the position's own compliant pick, or a fallback rank #1).
+// Backups are "next best in this position's rank order, excluding whoever
+// was actually chosen" -- NOT filtered by the compliance rule, so a human
+// reviewing them still sees real reach options, per design. Reference
+// equality (not name matching) to exclude `chosen`, since it's always
+// literally one of `list`'s own entries.
+function buildSuggestionCandidate(
+  pos: string,
+  chosen: RankingEntry,
+  list: RankingEntry[],
+  totalAtPosition: number,
+  targetSlots: SlotInstance[]
+): SuggestionCandidate {
+  const slot = targetSlots.find(s => slotAccepts(s, pos));
+  const { adp, source } = lookupAdp(chosen.player);
+  return {
+    ...chosen,
+    adp,
+    adpSource: source,
+    totalAtPosition,
+    slotName: slot ? slot.name : '',
+    backups: list.filter(p => p !== chosen).slice(0, 2)
+  };
+}
+
 // Core: given a team index, work out what to suggest.
 //
 // Your own per-position rank lists always decide who's best AT a position —
-// that part never changes. ADP only comes in when more than one position is
-// eligible for the open slot (an empty roster's very first pick, or FLEX/
-// bench, where every dedicated slot is open at once): comparing "percentile
-// within your own list" was arbitrary and could suggest a reach (e.g. a TE
-// at pick 2 just because the TE list happened to be shorter). Blended ADP
-// is a real, external signal of when players actually go, so it replaces
-// that comparison. Missing/unranked players fall back to a high ADP value
-// so they never win a comparison against a ranked player by default.
-export function computeSuggestion(teamIndex: number, picks: Pick[], rankings: RankingsByPosition): Suggestion {
+// that part never changes. ADP comes in two ways:
+//  1. Cross-position comparison, when more than one position is eligible for
+//     the open slot (an empty roster's very first pick, or FLEX/bench, where
+//     every dedicated slot is open at once): comparing "percentile within
+//     your own list" was arbitrary and could suggest a reach (e.g. a TE at
+//     pick 2 just because the TE list happened to be shorter). Blended ADP
+//     is a real, external signal of when players actually go, so it
+//     replaces that comparison.
+//  2. The round-based anti-reach guardrail (maxAllowedGap/
+//     findCompliantCandidate above): even with a single eligible position,
+//     a player whose ADP sits far past the current pick is skipped in favor
+//     of the next compliant name on the SAME rank list -- the list's own
+//     order still decides who's best, ADP here is a gate, not a re-sort.
+// Missing/unranked players fall back to a high ADP value so they never
+// win a comparison, and never count as "compliant," by default.
+export function computeSuggestion(
+  teamIndex: number,
+  picks: Pick[],
+  rankings: RankingsByPosition,
+  currentRound: number,
+  currentPickNumber: number
+): Suggestion {
   const teamPicks = picks.filter(p => p.teamIndex === teamIndex);
   const openSlots = computeOpenSlots(teamPicks);
 
@@ -247,34 +313,54 @@ export function computeSuggestion(teamIndex: number, picks: Pick[], rankings: Ra
     ? Object.keys(CONFIG.RANKINGS_COLUMNS)
     : [...eligiblePositions];
 
-  const candidatesByPosition: SuggestionCandidate[] = positionsToCheck
+  const maxGap = maxAllowedGap(currentRound);
+
+  const perPosition = positionsToCheck
     .map(pos => {
       const list = (rankings[pos] || []).filter(p => !drafted.has(p.player.toLowerCase().trim()));
       if (list.length === 0) return null;
       const totalAtPosition = (rankings[pos] || []).length;
-      const top = list[0];
-      const slot = targetSlots.find(s => slotAccepts(s, pos));
-      const { adp, source } = lookupAdp(top.player);
-      return {
-        ...top,
-        adp,
-        adpSource: source,
-        totalAtPosition,
-        slotName: slot ? slot.name : '',
-        backups: list.slice(1, 3)
-      };
+      const compliant = findCompliantCandidate(list, maxGap, currentPickNumber);
+      return { pos, list, totalAtPosition, compliant };
     })
-    .filter((c): c is SuggestionCandidate => c !== null);
+    .filter((p): p is NonNullable<typeof p> => p !== null);
 
-  if (candidatesByPosition.length === 0) {
+  if (perPosition.length === 0) {
     return { kind: 'noCandidates', openSlotSummary: summarizeSlots(openSlots) };
   }
 
-  // Single eligible position: no cross-position comparison needed, your own
-  // rank list already decided this — skip ADP sorting entirely.
-  if (positionsToCheck.length > 1) {
+  let candidatesByPosition: SuggestionCandidate[];
+  let reachFlagged = false;
+
+  if (positionsToCheck.length === 1) {
+    // Single eligible position: no cross-position comparison needed, your
+    // own rank list already decides order -- the guardrail only gates
+    // WHICH entry from that same list gets suggested.
+    const p = perPosition[0];
+    const chosen = p.compliant ?? p.list[0];
+    reachFlagged = p.compliant === null;
+    candidatesByPosition = [buildSuggestionCandidate(p.pos, chosen, p.list, p.totalAtPosition, targetSlots)];
+  } else {
+    const compliantPositions = perPosition.filter(p => p.compliant !== null);
+    if (compliantPositions.length > 0) {
+      // Compare only among positions that DID have a compliant candidate --
+      // a position with nothing compliant doesn't get its rank #1 back into
+      // the running just because other positions came up empty too.
+      candidatesByPosition = compliantPositions.map(p =>
+        buildSuggestionCandidate(p.pos, p.compliant!, p.list, p.totalAtPosition, targetSlots)
+      );
+    } else {
+      // Nobody anywhere satisfied the cap -- fall back to the ORIGINAL,
+      // unfiltered behavior (each position's own rank #1, cross-position
+      // ADP sort) exactly as before this guardrail existed, and flag it.
+      reachFlagged = true;
+      candidatesByPosition = perPosition.map(p =>
+        buildSuggestionCandidate(p.pos, p.list[0], p.list, p.totalAtPosition, targetSlots)
+      );
+    }
     candidatesByPosition.sort((a, b) => a.adp - b.adp);
   }
+
   const [primary, ...others] = candidatesByPosition;
 
   return {
@@ -282,7 +368,8 @@ export function computeSuggestion(teamIndex: number, picks: Pick[], rankings: Ra
     openSlotSummary: summarizeSlots(openSlots),
     multiPosition: positionsToCheck.length > 1,
     primary,
-    others
+    others,
+    ...(reachFlagged ? { reachFlagged: true } : {})
   };
 }
 

@@ -33,7 +33,7 @@ export const ADP_DATA: Record<string, AdpEntry> = {
   'CeeDee Lamb': { position: 'WR', sleeper: 9.5, espn: 9.0, blended: 9.2 },
   'De\'Von Achane': { position: 'RB', sleeper: 11.5, espn: 10.0, blended: 10.8 },
   'Justin Jefferson': { position: 'WR', sleeper: 11.3, espn: 11.0, blended: 11.2 },
-  'James Cook': { position: 'RB', sleeper: 10.8, espn: 12.0, blended: 11.4 },
+  'James Cook III': { position: 'RB', sleeper: 10.8, espn: 12.0, blended: 11.4 },
   'Ashton Jeanty': { position: 'RB', sleeper: 14.8, espn: 13.0, blended: 13.9 },
   'Saquon Barkley': { position: 'RB', sleeper: 13.4, espn: 18.0, blended: 15.7 },
   'Drake London': { position: 'WR', sleeper: 17.7, espn: 14.0, blended: 15.8 },

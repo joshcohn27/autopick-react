@@ -268,6 +268,13 @@ describe('computeSuggestion — ADP cross-position comparison', () => {
     return { rank: 1, position, player, nflTeam };
   }
 
+  // None of these three pre-existing tests are about the round-based
+  // guardrail itself -- round 16 makes maxAllowedGap(16) return null, so
+  // the guardrail is inert and behavior matches exactly what these tests
+  // originally asserted, pre-guardrail.
+  const INERT_ROUND = 16;
+  const INERT_PICK = 999;
+
   it('does NOT reach for a thin-list position on an empty roster (the pick-2 TE-reach bug)', () => {
     // Mirrors the real bug report: an empty roster's first pick was
     // comparing "percentile within your own list" across positions, and a
@@ -288,7 +295,7 @@ describe('computeSuggestion — ADP cross-position comparison', () => {
       DST: [ranking('Some DST', 'AAA', 'DST')]
     };
 
-    const suggestion = computeSuggestion(0, [], rankings);
+    const suggestion = computeSuggestion(0, [], rankings, INERT_ROUND, INERT_PICK);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.primary.player).toBe('Jahmyr Gibbs');
@@ -307,7 +314,7 @@ describe('computeSuggestion — ADP cross-position comparison', () => {
       TE: [ranking('Deep List TE', 'AAA', 'TE')] // would lose on ADP, but it's the only option
     };
 
-    const suggestion = computeSuggestion(0, teamPicks, rankings);
+    const suggestion = computeSuggestion(0, teamPicks, rankings, INERT_ROUND, INERT_PICK);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.multiPosition).toBe(false);
@@ -320,11 +327,120 @@ describe('computeSuggestion — ADP cross-position comparison', () => {
       RB: [ranking('Jahmyr Gibbs', 'DET', 'RB')], // real, low ADP
       WR: [ranking('Totally Made Up Rookie Nobody Has Heard Of', 'AAA', 'WR')] // not in ADP table
     };
-    const suggestion = computeSuggestion(0, [], rankings);
+    const suggestion = computeSuggestion(0, [], rankings, INERT_ROUND, INERT_PICK);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       // The unranked player must not beat a real, well-ranked player.
       expect(suggestion.primary.player).toBe('Jahmyr Gibbs');
+    }
+  });
+});
+
+describe('computeSuggestion — round-based anti-reach guardrail', () => {
+  // Single open dedicated slot: TE only (QB/RB/RB/WR/WR/DST/K all filled --
+  // FLEX and BENCH stay open too but are lower priority, so they don't
+  // enter targetSlots). Mirrors the existing "skips ADP entirely" fixture.
+  function teamPicksWithOnlyTeOpen(): Pick[] {
+    return (['QB', 'RB', 'RB', 'WR', 'WR', 'DST', 'K'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+  }
+
+  // Single open dedicated slot: WR only (one of its two WR slots still
+  // filled, the other left open; QB/RB/RB/TE/DST/K all filled).
+  function teamPicksWithOnlyOneWrOpen(): Pick[] {
+    return (['QB', 'RB', 'RB', 'WR', 'TE', 'DST', 'K'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+  }
+
+  it('round 2 (cap 10), single eligible position: skips a non-compliant rank-1 reach for a compliant real player at rank 2', () => {
+    const rankings: RankingsByPosition = {
+      TE: [
+        { rank: 1, position: 'TE', player: 'Fake Reach Guy', nflTeam: 'AAA' },
+        { rank: 2, position: 'TE', player: 'Trey McBride', nflTeam: 'ARI' } // real, blended 19.3
+      ]
+    };
+    // Pick 15: fake player's gap (999 - 15 = 984) blows past the round
+    // 1-4 cap of 10. McBride's gap (19.3 - 15 = 4.3) is well within it.
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyTeOpen(), rankings, 2, 15);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.multiPosition).toBe(false);
+      expect(suggestion.primary.player).toBe('Trey McBride');
+      // A compliant candidate WAS found, just not the top-ranked one.
+      expect(suggestion.reachFlagged).toBeFalsy();
+    }
+  });
+
+  it('round 12 (no cap), same fake-player-at-rank-1 setup: suggests the reach anyway, old behavior', () => {
+    const rankings: RankingsByPosition = {
+      TE: [
+        { rank: 1, position: 'TE', player: 'Fake Reach Guy', nflTeam: 'AAA' },
+        { rank: 2, position: 'TE', player: 'Trey McBride', nflTeam: 'ARI' }
+      ]
+    };
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyTeOpen(), rankings, 12, 15);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Fake Reach Guy');
+      expect(suggestion.reachFlagged).toBeFalsy();
+    }
+  });
+
+  it('round 1, every eligible position has only fake/unranked players: falls back to the original choice and flags it', () => {
+    const rankings: RankingsByPosition = {
+      QB: [{ rank: 1, position: 'QB', player: 'Fake QB Guy', nflTeam: 'AAA' }],
+      RB: [{ rank: 1, position: 'RB', player: 'Fake RB Guy', nflTeam: 'AAA' }]
+    };
+    // Empty roster in round 1 -- every dedicated position is eligible
+    // (multi-position). Neither fake player is in ADP_DATA, so both fall
+    // back to the unranked value (999), whose gap to pick 1 is far beyond
+    // round 1-4's cap of 10 -- nobody anywhere is compliant.
+    const suggestion = computeSuggestion(0, [], rankings, 1, 1);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.multiPosition).toBe(true);
+      expect(suggestion.reachFlagged).toBe(true);
+      // Which of the tied (both ADP 999) fake players wins is an incidental
+      // implementation detail (stable-sort tie order), not something this
+      // guardrail promises -- just confirm a valid pick still came back.
+      expect(['Fake QB Guy', 'Fake RB Guy']).toContain(suggestion.primary.player);
+    }
+  });
+
+  it('round 6 uses the round 5-10 cap of 20, not 10 or unlimited: a gap of 15 passes', () => {
+    const rankings: RankingsByPosition = {
+      WR: [
+        { rank: 1, position: 'WR', player: 'Fake Reach Guy', nflTeam: 'AAA' },
+        { rank: 2, position: 'WR', player: 'DeVonta Smith', nflTeam: 'PHI' } // real, blended 36.0
+      ]
+    };
+    // Pick 21: Smith's gap is 36.0 - 21 = 15, under the round 5-10 cap of 20.
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 21);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('DeVonta Smith');
+      expect(suggestion.reachFlagged).toBeFalsy();
+    }
+  });
+
+  it('round 6 uses the round 5-10 cap of 20, not 10 or unlimited: a gap of 25 fails, falls back and flags', () => {
+    const rankings: RankingsByPosition = {
+      WR: [
+        { rank: 1, position: 'WR', player: 'Fake Reach Guy', nflTeam: 'AAA' },
+        { rank: 2, position: 'WR', player: 'DeVonta Smith', nflTeam: 'PHI' }
+      ]
+    };
+    // Pick 11: Smith's gap is 36.0 - 11 = 25, over the round 5-10 cap of 20
+    // -- neither entry in the list is compliant.
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 11);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Fake Reach Guy');
+      expect(suggestion.reachFlagged).toBe(true);
     }
   });
 });

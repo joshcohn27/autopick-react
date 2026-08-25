@@ -100,7 +100,7 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
     );
   }
 
-  const { primary, others, openSlotSummary, multiPosition } = suggestion;
+  const { primary, others, openSlotSummary, multiPosition, reachFlagged } = suggestion;
   const slotsLine = Object.entries(openSlotSummary).map(([n, c]) => `${n} ×${c}`).join(' · ');
   const backups = [
     ...primary.backups.map(b => ({ ...b, position: primary.position })),
@@ -131,6 +131,12 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
         <div className="note">
           Multiple positions were eligible for this slot, so the top candidate at each was compared by
           blended ADP (ESPN + Sleeper) instead of by depth within its own position's list. Runners-up below.
+        </div>
+      )}
+
+      {reachFlagged && (
+        <div className="note">
+          No option satisfied this round's reach limit, so the best available is shown anyway.
         </div>
       )}
 

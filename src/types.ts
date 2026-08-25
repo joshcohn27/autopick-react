@@ -88,4 +88,10 @@ export type Suggestion =
       multiPosition: boolean;
       primary: SuggestionCandidate;
       others: SuggestionCandidate[];
+      // True when NO eligible position had a candidate satisfying the
+      // round-based anti-reach gap cap (see maxAllowedGap in draft.ts), so
+      // `primary` fell back to the original, unfiltered top choice anyway.
+      // Omitted/false when a compliant candidate was found (even if it
+      // wasn't each position's own rank #1).
+      reachFlagged?: boolean;
     };
