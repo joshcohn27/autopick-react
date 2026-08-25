@@ -1,23 +1,37 @@
 :root {
-  --bg: #10161A;
-  --panel: #1A2227;
-  --panel-2: #202A30;
-  --border: #2A343A;
-  --accent: #FFB020;
-  --text: #EDF0F1;
-  --muted: #8B979C;
+  --bg: #08070B;
+  --panel: #120E17;
+  --panel-2: #1B1424;
+  --border: #2B2333;
+  --accent: #9D5CFF;
+  --text: #FFFFFF;
+  --muted: #9A8BB0;
 
-  --pos-QB: #E0555A;
-  --pos-RB: #4FB286;
-  --pos-WR: #4C8DFF;
-  --pos-TE: #C98BE0;
-  --pos-K: #D9A441;
-  --pos-DST: #7C8B99;
+  /* Position-tag colors match the league spreadsheet's own color-coding
+     convention, not an app-invented palette. --pos-TE and --pos-DST are
+     dark enough that the shared dark badge text would fail contrast, so
+     both get a white-text override instead (see .pos-tag.pos-TE/.pos-DST
+     below). QB/RB/WR/K stay on the shared default dark badge text --
+     verified all comfortably clear 4.5:1 AA against it (5.1-11:1). */
+  --pos-QB: #22C55E;
+  --pos-RB: #E5484D;
+  --pos-WR: #22D3EE;
+  --pos-TE: #1D4ED8;
+  --pos-K: #A855F7;
+  --pos-DST: #000000;
   --pos-UNKNOWN: #556067;
 
-  --display: 'Oswald', sans-serif;
-  --body: 'Inter', sans-serif;
-  --mono: 'IBM Plex Mono', monospace;
+  /* Carlito is the free, metrically-identical substitute for Calibri
+     (which is Microsoft-licensed and not embeddable as a web font) -- a
+     viewer with Calibri installed locally sees the real thing via the
+     fallback, everyone else gets Carlito, which matches it almost exactly.
+     No separate display face anymore -- --display and --body are the same
+     stack; hierarchy comes from weight/size, not a second typeface. */
+  --display: 'Carlito', 'Calibri', sans-serif;
+  --body: 'Carlito', 'Calibri', sans-serif;
+  /* Used ONLY for .wordmark-sub and .note -- a couple of quiet, editorial
+     moments, italic. Not for labels, data, or anything else. */
+  --voice: 'EB Garamond', serif;
 }
 
 * { box-sizing: border-box; }
@@ -36,11 +50,11 @@ body {
 
 /* ---------- Banner ---------- */
 .banner {
-  background: #3A2A0F;
+  background: #20122E;
   color: var(--accent);
-  border-bottom: 1px solid #4A3A1A;
+  border-bottom: 1px solid #3A2354;
   padding: 10px 24px;
-  font-size: 13px;
+  font-size: 14px;
   text-align: center;
   cursor: pointer;
 }
@@ -59,13 +73,16 @@ body {
 .wordmark-main {
   font-family: var(--display);
   font-weight: 700;
-  font-size: 22px;
+  font-size: 23px;
   letter-spacing: 0.06em;
   display: block;
 }
 
 .wordmark-sub {
-  font-size: 12px;
+  font-family: var(--voice);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
   color: var(--muted);
   letter-spacing: 0.03em;
 }
@@ -78,8 +95,9 @@ body {
 }
 
 .status-line {
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
   color: var(--muted);
   min-width: 96px;
 }
@@ -91,7 +109,7 @@ body {
   padding: 8px 14px;
   border-radius: 6px;
   font-family: var(--body);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
@@ -108,7 +126,7 @@ body {
 .toggle-track {
   width: 40px;
   height: 22px;
-  background: #2A343A;
+  background: var(--border);
   border-radius: 999px;
   position: relative;
   transition: background 0.15s ease;
@@ -123,12 +141,12 @@ body {
   background: var(--muted);
   transition: transform 0.15s ease, background 0.15s ease;
 }
-.toggle input:checked + .toggle-track { background: #4A3A1A; }
+.toggle input:checked + .toggle-track { background: #3A2354; }
 .toggle input:checked + .toggle-track .toggle-thumb {
   transform: translateX(18px);
   background: var(--accent);
 }
-.toggle-label { font-size: 13px; color: var(--muted); }
+.toggle-label { font-size: 14px; color: var(--muted); }
 .toggle-label.is-on { color: var(--accent); }
 .toggle-label.is-on::before {
   content: '●';
@@ -153,40 +171,41 @@ body {
 }
 
 .eyebrow {
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--body);
+  font-size: 13px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 8px;
 }
 
-.clock-panel {
+/* One card for both "on the clock" and "autopick would be" -- previously
+   two separate bordered cards (one of which nested a further bordered/
+   left-accent sub-card plus hairline dividers between rows). Hierarchy
+   inside now comes from typography and spacing, not extra borders. */
+.draft-status-panel {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px 28px;
+}
+
+.clock-block {
   text-align: center;
+  margin-bottom: 24px;
 }
 
 .on-clock {
   font-family: var(--display);
   font-weight: 700;
-  font-size: clamp(32px, 7vw, 48px);
+  font-size: clamp(34px, 7vw, 50px);
   letter-spacing: 0.01em;
-}
-
-.suggestion-panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px 28px;
 }
 
 /* ---------- Trade notes ---------- */
 .trade-notes-panel {
-  background: #241C10;
-  border: 1px solid #4A3A1A;
+  background: #20122E;
+  border: 1px solid #3A2354;
   border-radius: 12px;
   padding: 18px 24px;
 }
@@ -194,68 +213,104 @@ body {
 .trade-notes-panel ul {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 .trade-notes-panel li { color: var(--text); }
 
-.slots-line {
-  font-family: var(--mono);
+/* ---------- ADP board ---------- */
+.adp-board-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 28px;
+}
+.adp-board-note {
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+.adp-board-list {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adp-board-row {
+  display: grid;
+  grid-template-columns: 28px 40px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 14px;
+}
+.adp-board-rank {
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
   font-size: 12px;
+  text-align: right;
+}
+.adp-board-name { color: var(--text); }
+.adp-board-row .backup-rank { padding-right: 10px; }
+
+.slots-line {
+  font-family: var(--voice);
+  font-style: italic;
+  font-size: 13px;
   color: var(--muted);
   margin-bottom: 14px;
 }
 
-.rec-card {
+/* Primary pick: small position pill next to the large player name, flowing
+   in the card -- no boxed/left-accent-bordered wrapper around it anymore. */
+.rec-row {
   display: flex;
-  gap: 16px;
   align-items: center;
-  background: var(--panel-2);
-  border-radius: 10px;
-  padding: 18px;
-  border-left: 4px solid var(--accent);
+  gap: 10px;
+}
+/* Expanded from the base .pos-tag's tight 3px 0 -- this pill isn't
+   constrained to a fixed grid column like the backup/roster/ADP-board
+   rows, so it can breathe a bit more as the primary call-out. */
+.rec-row .pos-tag {
+  padding: 5px 12px;
 }
 
-.rec-pos {
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: 14px;
-  color: #0E1416;
-  background: var(--muted);
-  border-radius: 6px;
-  padding: 6px 10px;
-  min-width: 40px;
-  text-align: center;
-}
 .pos-QB { background: var(--pos-QB); }
 .pos-RB { background: var(--pos-RB); }
 .pos-WR { background: var(--pos-WR); }
 .pos-TE { background: var(--pos-TE); }
 .pos-K  { background: var(--pos-K); }
 .pos-DST { background: var(--pos-DST); }
+/* TE's badge is a darker blue and D/ST's is true black -- both need white
+   text instead of the shared dark badge text. Two-class selector so this
+   wins regardless of stylesheet order. */
+.pos-tag.pos-TE, .pos-tag.pos-DST { color: #FFFFFF; }
 .pos-UNKNOWN { background: var(--pos-UNKNOWN); }
 
 .rec-name {
   font-family: var(--display);
   font-weight: 600;
-  font-size: 22px;
+  font-size: 23px;
 }
 .rec-meta {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .note {
-  font-size: 12px;
+  font-family: var(--voice);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
   color: var(--muted);
   margin-top: 14px;
   line-height: 1.5;
 }
 
 .backups-label {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-family: var(--body);
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -263,39 +318,43 @@ body {
   margin-bottom: 8px;
 }
 
+.backups {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
 .backup-row {
   display: grid;
   grid-template-columns: 40px 1fr auto;
   gap: 10px;
   align-items: center;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 14px;
 }
 .pos-tag {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-family: var(--body);
+  font-size: 11px;
   font-weight: 600;
-  color: #0E1416;
+  color: var(--bg);
   border-radius: 4px;
   padding: 3px 0;
   text-align: center;
 }
 .backup-rank {
-  font-family: var(--mono);
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
 .empty-state {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 15px;
   padding: 10px 0;
 }
 
 /* ---------- Override panel ---------- */
 .override-panel summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
   padding: 6px 4px;
 }
@@ -313,7 +372,7 @@ body {
   border-radius: 6px;
   padding: 8px 10px;
   font-family: var(--body);
-  font-size: 13px;
+  font-size: 14px;
   flex: 1;
   min-width: 160px;
 }
@@ -325,9 +384,93 @@ button:focus-visible, select:focus-visible, summary:focus-visible,
   outline-offset: 2px;
 }
 
+/* ---------- Tab nav ---------- */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  max-width: 640px;
+  margin: 20px auto 0;
+  padding: 0 20px;
+}
+.tab-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-family: var(--body);
+  font-size: 14px;
+  cursor: pointer;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ---------- Rosters tab ---------- */
+.board-wide { max-width: 1100px; }
+
+.rosters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.roster-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.roster-card-header {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 17px;
+}
+
+.roster-group-label {
+  font-family: var(--body);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.roster-list { display: flex; flex-direction: column; gap: 8px; }
+
+.roster-row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+/* Expanded from the base .pos-tag's tight 3px 0 -- this pill sits in the
+   row's auto-sized last column, not a fixed-width one, so it can breathe. */
+.roster-row .pos-tag {
+  padding: 5px 12px;
+}
+
+.roster-slot-name {
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--muted);
+}
+.roster-player-name { color: var(--text); }
+.roster-empty {
+  color: var(--muted);
+  grid-column: 2 / 4;
+}
+
+.roster-unassigned-note { margin-top: 10px; }
+
 /* ---------- Mobile ---------- */
 @media (max-width: 480px) {
   .topbar { padding: 14px 16px; }
   .board { padding: 20px 14px 50px; }
-  .clock-panel, .suggestion-panel { padding: 18px; }
+  .draft-status-panel { padding: 18px; }
 }

@@ -5,6 +5,10 @@ export interface DraftCell {
   nflTeam: string | null;
   position: Position;
   raw: string;
+  // Present only when this cell is a trade marker (the exact text of
+  // another team's row-1 name, all-caps) rather than a player -- the index
+  // into TEAM_COLUMNS/teamNames of the team this pick actually belongs to.
+  tradeMarkerTeamIndex?: number;
 }
 
 export interface RankingEntry {
@@ -43,8 +47,33 @@ export interface SlotInstance {
   filledBy: string | null;
 }
 
+// One roster slot as shown on the Rosters tab -- unlike SlotInstance (which
+// only tracks the drafted player's name string, discarded after the fill
+// simulation), this keeps enough of the pick to render a position tag and
+// NFL team. player/position/nflTeam are null for a slot the team hasn't
+// filled yet, rendered as an empty placeholder rather than omitted.
+export interface RosterSlotView {
+  slotName: string;
+  player: string | null;
+  position: Position | null;
+  nflTeam: string | null;
+}
+
+// One team's full roster, split the same way buildTeamRoster's priority
+// simulation splits it: starters = priority 1 (dedicated) and 2 (FLEX)
+// slots, bench = priority 3. unassigned holds any pick that didn't fit any
+// slot -- a data anomaly (more picks than roster spots) that shouldn't
+// normally happen with 16 rounds = 16 slots, surfaced instead of dropped.
+export interface TeamRoster {
+  teamName: string;
+  starters: RosterSlotView[];
+  bench: RosterSlotView[];
+  unassigned: Pick[];
+}
+
 export interface SuggestionCandidate extends RankingEntry {
-  percentile: number;
+  adp: number;
+  adpSource: 'blended' | 'espn-only' | 'sleeper-only' | 'unranked';
   totalAtPosition: number;
   slotName: string;
   backups: RankingEntry[];

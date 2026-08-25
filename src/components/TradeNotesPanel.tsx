@@ -11,7 +11,7 @@ export function TradeNotesPanel({ notes }: Props) {
 
   return (
     <section className="trade-notes-panel">
-      <div className="eyebrow">Known pick trades — verify before trusting the team above</div>
+      <div className="eyebrow">Known pick trades: verify before trusting the team above</div>
       <ul>
         {notes.map((note, i) => (
           <li key={i}>{note}</li>

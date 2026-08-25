@@ -1,11 +1,10 @@
-import { CONFIG } from '../config';
-
 interface Props {
+  teams: string[];
   overrideTeam: number | null;
   onChange: (teamIndex: number | null) => void;
 }
 
-export function OverridePanel({ overrideTeam, onChange }: Props) {
+export function OverridePanel({ teams, overrideTeam, onChange }: Props) {
   return (
     <section className="override-panel">
       <details>
@@ -15,9 +14,9 @@ export function OverridePanel({ overrideTeam, onChange }: Props) {
             value={overrideTeam ?? ''}
             onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
           >
-            <option value="">— Auto-detected —</option>
-            {CONFIG.TEAMS.map((t, i) => (
-              <option key={t} value={i}>{t}</option>
+            <option value="">Auto-detected</option>
+            {teams.map((t, i) => (
+              <option key={`${t}-${i}`} value={i}>{t}</option>
             ))}
           </select>
           <button className="btn-ghost" onClick={() => onChange(null)}>
