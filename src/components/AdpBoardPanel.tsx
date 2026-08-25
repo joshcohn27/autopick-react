@@ -47,8 +47,9 @@ export function AdpBoardPanel({ entries }: { entries: AdpBoardEntry[] }) {
   const [search, setSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('ALL');
 
-  // Client-side over the full (now up to ~790-row) entries prop -- adp.ts
-  // no longer caps the board itself, so search/position narrow it down here.
+  // Client-side over the full entries prop, whatever its current size --
+  // adp.ts no longer caps the board itself, so search/position narrow it
+  // down here.
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return entries.filter(e => {
@@ -91,7 +92,7 @@ export function AdpBoardPanel({ entries }: { entries: AdpBoardEntry[] }) {
 
       {/* Same .adp-board-list scroll container as before (max-height +
           overflow-y: auto in index.css, untouched) -- still applies
-          regardless of whether the filtered set is 5 rows or all ~790. */}
+          regardless of how many rows the filtered set comes out to. */}
       <div className="adp-board-list">
         {filtered.length === 0 ? (
           <div className="empty-state">No players match your search.</div>
@@ -100,7 +101,10 @@ export function AdpBoardPanel({ entries }: { entries: AdpBoardEntry[] }) {
             <div className="adp-board-row" key={`${e.player}-${i}`}>
               <span className="adp-board-rank">{i + 1}</span>
               <span className={`pos-tag pos-${e.position}`}>{positionLabel(e.position)}</span>
-              <span className="adp-board-name">{e.player}</span>
+              <span className="adp-board-name">
+                {e.player}
+                {e.nflTeam ? ` · ${e.nflTeam}` : ''}
+              </span>
               <span className="backup-rank">{e.adp.toFixed(1)}</span>
             </div>
           ))

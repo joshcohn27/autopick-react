@@ -3,13 +3,13 @@ import { lookupAdp, computeAdpBoard } from './adp';
 import { ADP_DATA } from '../data/adp-data';
 
 // The floor K/DST are placed at, per adp-data.ts's own header comment:
-// (14-1) * team_count + 1, currently 183 for a 14-team league.
-const K_DST_FLOOR = 183;
+// (12-1) * team_count + 1, currently 155 for a 14-team league.
+const K_DST_FLOOR = 155;
 
 describe('lookupAdp', () => {
   it('finds a real player case-insensitively', () => {
     const result = lookupAdp('jahmyr gibbs');
-    expect(result.source).toBe('blended');
+    expect(result.source).toBe('ranked');
     expect(result.adp).toBeLessThan(5);
   });
 
@@ -44,15 +44,14 @@ describe('computeAdpBoard', () => {
 
   it('returns the full list, uncapped, when no limit is passed', () => {
     const board = computeAdpBoard(new Set());
+    // Deliberately NOT a hardcoded number -- ADP_DATA's size is expected to
+    // change over time, so this compares against the dataset's own live
+    // size rather than a snapshot count that would need editing every time
+    // the file changes.
     expect(board.length).toBe(Object.keys(ADP_DATA).length);
-    // 784, not the original (buggy) 790 -- the six apostrophe-named players
-    // that got corrupted into a truncated key AND a duplicate late-round
-    // entry (e.g. "Ja'Marr Chase" -> "Marr Chase" plus a fake deep-bench
-    // "Ja'Marr Chase") are fixed to one correct entry each: 790 - 6 = 784.
-    expect(board.length).toBe(784);
   });
 
-  it('places every K and DST entry at or beyond the round-14-or-later floor', () => {
+  it('places every K and DST entry at or beyond the round-12-or-later floor', () => {
     const board = computeAdpBoard(new Set());
     const kickers = board.filter(e => e.position === 'K');
     const dsts = board.filter(e => e.position === 'DST');
@@ -63,9 +62,30 @@ describe('computeAdpBoard', () => {
     });
   });
 
-  it('leaves the real-ADP block untouched by the sheet-sourced extension (Jahmyr Gibbs still exactly 1.0)', () => {
-    expect(ADP_DATA['Jahmyr Gibbs'].blended).toBe(1.0);
+  it('carries nflTeam through to the board for a real player', () => {
     const board = computeAdpBoard(new Set());
-    expect(board[0]).toEqual({ player: 'Jahmyr Gibbs', position: 'RB', adp: 1.0 });
+    const gibbs = board.find(e => e.player === 'Jahmyr Gibbs');
+    expect(gibbs).toBeDefined();
+    expect(gibbs).toEqual({ player: 'Jahmyr Gibbs', position: 'RB', nflTeam: 'DET', adp: 1.2 });
+  });
+});
+
+describe('ADP_DATA integrity', () => {
+  it('gives every entry a position that is one of the six recognized codes', () => {
+    const validPositions = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DST']);
+    Object.entries(ADP_DATA).forEach(([player, entry]) => {
+      expect(validPositions.has(entry.position), `${player} has an unrecognized position: ${entry.position}`).toBe(true);
+    });
+  });
+
+  it('has no free-agent entries (nflTeam: "FA") -- per the file\'s own documented rule', () => {
+    Object.entries(ADP_DATA).forEach(([player, entry]) => {
+      expect(entry.nflTeam, `${player} has nflTeam: 'FA'`).not.toBe('FA');
+    });
+  });
+
+  it('caps QB at exactly the 32 real Week 1 starters', () => {
+    const qbCount = Object.values(ADP_DATA).filter(e => e.position === 'QB').length;
+    expect(qbCount).toBe(32);
   });
 });

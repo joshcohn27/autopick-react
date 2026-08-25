@@ -63,7 +63,11 @@ export const CONFIG = {
     { name: 'FLEX',  eligible: ['RB', 'WR', 'TE'], count: 1, priority: 2 },
     { name: 'DST',   eligible: ['DST'],            count: 1, priority: 1 },
     { name: 'K',     eligible: ['K'],              count: 1, priority: 1 },
-    { name: 'BENCH', eligible: ['ANY'],            count: 7, priority: 3 }
+    // K/DST are deliberately excluded here (not 'ANY') -- real leagues
+    // stream those off waivers, nobody rosters a backup one. See
+    // BENCH_TARGETS in draft.ts for the further QB/RB/WR/TE composition
+    // target Autopick suggests toward within this eligible set.
+    { name: 'BENCH', eligible: ['QB', 'RB', 'WR', 'TE'], count: 7, priority: 3 }
   ] as RosterSlotType[],
 
   // --- Live behavior --------------------------------------------------

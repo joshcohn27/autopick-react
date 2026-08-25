@@ -219,7 +219,7 @@ function summarizeSlots(openSlots: SlotInstance[]): Record<string, number> {
 }
 
 // Round-based anti-reach guardrail: how far past the current overall pick
-// number a player's blended ADP is allowed to sit before that pick counts
+// number a player's ADP is allowed to sit before that pick counts
 // as too much of a reach to suggest as the primary. Tighter early (rounds
 // 1-4), looser mid-draft (5-10), off entirely late (11-16, null = no cap)
 // -- by then bench/depth picks are inherently unpredictable and shouldn't
@@ -271,6 +271,48 @@ function buildSuggestionCandidate(
   };
 }
 
+// Ideal bench composition Autopick suggests toward -- NOT a hard cap on
+// what a team can actually roster (a team's real bench is whatever they
+// draft), only a target shaping which position gets suggested for an open
+// bench slot. K/DST aren't listed at all: they're excluded from bench
+// entirely and structurally, via CONFIG.ROSTER_SLOTS' BENCH.eligible no
+// longer including them -- that's a hard rule, independent of this target.
+export const BENCH_TARGETS: Record<'QB' | 'RB' | 'WR' | 'TE', { min: number; max: number }> = {
+  RB: { min: 2, max: 3 },
+  WR: { min: 2, max: 3 },
+  TE: { min: 1, max: 1 },
+  QB: { min: 1, max: 1 }
+};
+
+// Team's current bench composition broken down by position (filled slots
+// only -- an open bench slot doesn't count toward anything). Reuses
+// buildTeamRoster's own priority-fill simulation (the same one
+// computeOpenSlots relies on) rather than re-deriving it a third time, so
+// this always agrees with what's actually shown on the Rosters tab.
+function benchCompositionByPosition(teamPicksInOrder: Pick[]): Record<string, number> {
+  const { bench } = buildTeamRoster(teamPicksInOrder);
+  const counts: Record<string, number> = {};
+  bench.forEach(slot => {
+    if (slot.position) counts[slot.position] = (counts[slot.position] || 0) + 1;
+  });
+  return counts;
+}
+
+// Narrows a bench slot's eligible positions down to ones still under their
+// BENCH_TARGETS max, given the team's current bench counts. Exported and
+// kept as a small pure function specifically so the defensive fallback
+// (every position already at its max) can be unit-tested directly with a
+// hand-crafted counts object -- a real 7-slot bench can never actually
+// reach that state on its own (the four maxes sum to 8), so there's no way
+// to construct it through real Pick[] data.
+export function narrowBenchPositions(positionsToCheck: string[], benchCounts: Record<string, number>): string[] {
+  const underMax = positionsToCheck.filter(pos => {
+    const target = BENCH_TARGETS[pos as keyof typeof BENCH_TARGETS];
+    return !target || (benchCounts[pos] ?? 0) < target.max;
+  });
+  return underMax.length > 0 ? underMax : positionsToCheck;
+}
+
 // Core: given a team index, work out what to suggest.
 //
 // Your own per-position rank lists always decide who's best AT a position —
@@ -279,9 +321,9 @@ function buildSuggestionCandidate(
 //     the open slot (an empty roster's very first pick, or FLEX/bench, where
 //     every dedicated slot is open at once): comparing "percentile within
 //     your own list" was arbitrary and could suggest a reach (e.g. a TE at
-//     pick 2 just because the TE list happened to be shorter). Blended ADP
-//     is a real, external signal of when players actually go, so it
-//     replaces that comparison.
+//     pick 2 just because the TE list happened to be shorter). ADP is a
+//     real, external signal of when players actually go, so it replaces
+//     that comparison.
 //  2. The round-based anti-reach guardrail (maxAllowedGap/
 //     findCompliantCandidate above): even with a single eligible position,
 //     a player whose ADP sits far past the current pick is skipped in favor
@@ -309,9 +351,19 @@ export function computeSuggestion(
   targetSlots.forEach(s => s.eligible.forEach(p => eligiblePositions.add(p)));
 
   const drafted = draftedNameSet(picks);
-  const positionsToCheck = eligiblePositions.has('ANY')
+  let positionsToCheck = eligiblePositions.has('ANY')
     ? Object.keys(CONFIG.RANKINGS_COLUMNS)
     : [...eligiblePositions];
+
+  // Bench slots specifically (priority 3, i.e. every dedicated + FLEX slot
+  // is already filled and only bench remains open): narrow further to
+  // positions still under their BENCH_TARGETS max. K/DST are already
+  // excluded structurally (BENCH.eligible doesn't list them at all) -- this
+  // only shapes the QB/RB/WR/TE split. Dedicated slots and FLEX are
+  // completely untouched by this.
+  if (minPriority === 3) {
+    positionsToCheck = narrowBenchPositions(positionsToCheck, benchCompositionByPosition(teamPicks));
+  }
 
   const maxGap = maxAllowedGap(currentRound);
 

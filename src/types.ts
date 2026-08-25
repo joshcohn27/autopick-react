@@ -73,7 +73,7 @@ export interface TeamRoster {
 
 export interface SuggestionCandidate extends RankingEntry {
   adp: number;
-  adpSource: 'blended' | 'espn-only' | 'sleeper-only' | 'unranked';
+  adpSource: 'ranked' | 'unranked';
   totalAtPosition: number;
   slotName: string;
   backups: RankingEntry[];

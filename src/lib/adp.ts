@@ -7,40 +7,35 @@ import type { AdpEntry } from '../data/adp-data';
 const UNRANKED_FALLBACK = 999;
 
 // Build a case-insensitive lookup once.
-const NORMALIZED: Record<string, { blended: number; espn: number | null; sleeper: number | null }> = {};
+const NORMALIZED: Record<string, AdpEntry> = {};
 for (const [name, entry] of Object.entries(ADP_DATA)) {
   NORMALIZED[name.toLowerCase().trim()] = entry;
 }
 
 export interface AdpLookup {
   adp: number;
-  source: 'blended' | 'espn-only' | 'sleeper-only' | 'unranked';
+  source: 'ranked' | 'unranked';
 }
 
 export function lookupAdp(playerName: string): AdpLookup {
   const entry = NORMALIZED[playerName.toLowerCase().trim()];
   if (!entry) return { adp: UNRANKED_FALLBACK, source: 'unranked' };
-
-  if (entry.espn !== null && entry.sleeper !== null) {
-    return { adp: entry.blended, source: 'blended' };
-  }
-  if (entry.espn !== null) return { adp: entry.espn, source: 'espn-only' };
-  if (entry.sleeper !== null) return { adp: entry.sleeper, source: 'sleeper-only' };
-  return { adp: UNRANKED_FALLBACK, source: 'unranked' };
+  return { adp: entry.adp, source: 'ranked' };
 }
 
 export interface AdpBoardEntry {
   player: string;
   position: AdpEntry['position'];
+  nflTeam: string | null;
   adp: number;
 }
 
-// The full blended ADP list ordered ascending (best/earliest first), the
-// same shape you'd see scrolling a Sleeper/ESPN draft room's player pool.
+// The full ADP list ordered ascending (best/earliest first), the same
+// shape you'd see scrolling a Sleeper/ESPN draft room's player pool.
 // Doesn't know about your league's roster rules or slot needs at all —
 // this is just "who's gone, in what order, league-wide" for reference.
 const FULL_BOARD: AdpBoardEntry[] = Object.entries(ADP_DATA)
-  .map(([player, entry]) => ({ player, position: entry.position, adp: entry.blended }))
+  .map(([player, entry]) => ({ player, position: entry.position, nflTeam: entry.nflTeam, adp: entry.adp }))
   .sort((a, b) => a.adp - b.adp);
 
 // Available players by ADP, with anyone already drafted (by exact name

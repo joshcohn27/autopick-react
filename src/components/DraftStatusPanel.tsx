@@ -130,7 +130,7 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
       {multiPosition && (
         <div className="note">
           Multiple positions were eligible for this slot, so the top candidate at each was compared by
-          blended ADP (ESPN + Sleeper) instead of by depth within its own position's list. Runners-up below.
+          ADP instead of by depth within its own position's list. Runners-up below.
         </div>
       )}
 

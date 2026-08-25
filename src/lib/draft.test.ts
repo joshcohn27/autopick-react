@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import {
   parseDraftCell, parseRankingCell, colLetterToIndex,
   parseDraftGrid, parseTeamNames, snakeOrderForRound, analyzeGrid, computeOpenSlots, parseTradeNotes,
-  computeSuggestion
+  computeSuggestion, narrowBenchPositions
 } from './draft';
 import type { Pick, RankingsByPosition } from '../types';
 
@@ -360,11 +360,11 @@ describe('computeSuggestion — round-based anti-reach guardrail', () => {
     const rankings: RankingsByPosition = {
       TE: [
         { rank: 1, position: 'TE', player: 'Fake Reach Guy', nflTeam: 'AAA' },
-        { rank: 2, position: 'TE', player: 'Trey McBride', nflTeam: 'ARI' } // real, blended 19.3
+        { rank: 2, position: 'TE', player: 'Trey McBride', nflTeam: 'ARI' } // real, adp 21.1
       ]
     };
     // Pick 15: fake player's gap (999 - 15 = 984) blows past the round
-    // 1-4 cap of 10. McBride's gap (19.3 - 15 = 4.3) is well within it.
+    // 1-4 cap of 10. McBride's gap (21.1 - 15 = 6.1) is well within it.
     const suggestion = computeSuggestion(0, teamPicksWithOnlyTeOpen(), rankings, 2, 15);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
@@ -415,11 +415,11 @@ describe('computeSuggestion — round-based anti-reach guardrail', () => {
     const rankings: RankingsByPosition = {
       WR: [
         { rank: 1, position: 'WR', player: 'Fake Reach Guy', nflTeam: 'AAA' },
-        { rank: 2, position: 'WR', player: 'DeVonta Smith', nflTeam: 'PHI' } // real, blended 36.0
+        { rank: 2, position: 'WR', player: 'DeVonta Smith', nflTeam: 'PHI' } // real, adp 39.0
       ]
     };
-    // Pick 21: Smith's gap is 36.0 - 21 = 15, under the round 5-10 cap of 20.
-    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 21);
+    // Pick 24: Smith's gap is 39.0 - 24 = 15, under the round 5-10 cap of 20.
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 24);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.primary.player).toBe('DeVonta Smith');
@@ -434,14 +434,99 @@ describe('computeSuggestion — round-based anti-reach guardrail', () => {
         { rank: 2, position: 'WR', player: 'DeVonta Smith', nflTeam: 'PHI' }
       ]
     };
-    // Pick 11: Smith's gap is 36.0 - 11 = 25, over the round 5-10 cap of 20
+    // Pick 14: Smith's gap is 39.0 - 14 = 25, over the round 5-10 cap of 20
     // -- neither entry in the list is compliant.
-    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 11);
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyOneWrOpen(), rankings, 6, 14);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.primary.player).toBe('Fake Reach Guy');
       expect(suggestion.reachFlagged).toBe(true);
     }
+  });
+});
+
+describe('computeSuggestion — bench composition targets', () => {
+  // QB/RB/RB/WR/WR/TE/DST/K fills every dedicated slot; the 9th pick (RB)
+  // has nowhere dedicated left to go, so it flows into FLEX -- leaving
+  // every priority-1/2 slot filled and all 7 bench slots open, zero bench
+  // picks yet.
+  function fillAllStartersAndFlex(): Pick[] {
+    return (['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'DST', 'K', 'RB'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Starter ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+  }
+
+  function benchPick(pos: 'QB' | 'RB' | 'WR' | 'TE', round: number, name: string): Pick {
+    return { round, teamIndex: 0, pickNumber: round, cell: { player: name, nflTeam: null, position: pos, raw: '' } };
+  }
+
+  it('never suggests a bench K or DST, even when one would otherwise be the best available by ADP', () => {
+    const teamPicks = fillAllStartersAndFlex();
+    const rankings: RankingsByPosition = {
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }],
+      RB: [{ rank: 1, position: 'RB', player: 'Some Bench RB', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicks, rankings, 16, 999);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.position).not.toBe('K');
+      expect(suggestion.primary.position).not.toBe('DST');
+      expect(suggestion.primary.player).toBe('Some Bench RB');
+      // K/DST must not even show up as a backup or other-position option --
+      // they're structurally excluded from bench eligibility entirely, not
+      // just outranked.
+      const allShown = [suggestion.primary, ...suggestion.primary.backups, ...suggestion.others];
+      expect(allShown.every(c => c.position !== 'K' && c.position !== 'DST')).toBe(true);
+    }
+  });
+
+  it('excludes RB from a further bench suggestion once the team already has 3 bench RBs (at max)', () => {
+    const teamPicks = [
+      ...fillAllStartersAndFlex(),
+      benchPick('RB', 10, 'Bench RB 1'),
+      benchPick('RB', 11, 'Bench RB 2'),
+      benchPick('RB', 12, 'Bench RB 3') // 3rd bench RB -- at BENCH_TARGETS.RB.max
+    ];
+    const rankings: RankingsByPosition = {
+      RB: [{ rank: 1, position: 'RB', player: 'Jahmyr Gibbs', nflTeam: 'DET' }], // real, low ADP -- would win if allowed
+      WR: [{ rank: 1, position: 'WR', player: 'Some Bench WR', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicks, rankings, 16, 999);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.position).not.toBe('RB');
+      expect(suggestion.primary.player).toBe('Some Bench WR');
+    }
+  });
+
+  it('reports zero remaining bench slots once all 7 are filled at target composition, regardless of the split', () => {
+    const teamPicks = [
+      ...fillAllStartersAndFlex(), // 9
+      benchPick('RB', 10, 'Bench RB 1'), benchPick('RB', 11, 'Bench RB 2'), benchPick('RB', 12, 'Bench RB 3'),
+      benchPick('WR', 13, 'Bench WR 1'), benchPick('WR', 14, 'Bench WR 2'),
+      benchPick('TE', 15, 'Bench TE 1'),
+      benchPick('QB', 16, 'Bench QB 1')
+      // 3 RB + 2 WR + 1 TE + 1 QB = 7 bench, + 9 starters/flex = 16 total.
+    ];
+    const openSlots = computeOpenSlots(teamPicks);
+    expect(openSlots.filter(s => s.name === 'BENCH').length).toBe(0);
+    expect(openSlots.length).toBe(0);
+
+    // Confirmed naturally handled, not forced: computeSuggestion's own
+    // openSlots.length === 0 check returns rosterFull before bench
+    // composition logic is ever consulted.
+    const suggestion = computeSuggestion(0, teamPicks, {}, 16, 999);
+    expect(suggestion.kind).toBe('rosterFull');
+  });
+
+  it('falls back to the unrestricted position set if every position were somehow already at its max (defensive; not reachable via real 7-slot bench data)', () => {
+    // Hand-crafted counts a real 7-slot bench could never actually produce
+    // (the four maxes sum to 8) -- tests the defensive fallback directly
+    // rather than fighting the data model to reach an impossible state.
+    const allAtMax: Record<string, number> = { QB: 5, RB: 5, WR: 5, TE: 5 };
+    expect(narrowBenchPositions(['QB', 'RB', 'WR', 'TE'], allAtMax)).toEqual(['QB', 'RB', 'WR', 'TE']);
   });
 });
 
