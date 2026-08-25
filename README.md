@@ -55,11 +55,13 @@ src/
     adp.ts                     ADP lookup + full board (pure functions)
     adp.test.ts                vitest suite covering it
     sheets.ts                  Google Sheets API fetch
+    welcome.ts                  localStorage read/write for the one-time welcome modal
   data/
     adp-data.ts                the ADP dataset itself (see its header comment for provenance)
   hooks/
     useAutopick.ts             polling / auto-off / state orchestration
   components/
+    WelcomeModal.tsx            one-time "flip the toggle on" popup (first visit only)
     TopBar.tsx                 status line + drafting toggle + manual pull
     DraftStatusPanel.tsx       on-the-clock + Autopick suggestion
     TradeNotesPanel.tsx        always-visible trade notes
@@ -71,6 +73,10 @@ src/
 
 ## How it behaves live
 
+- **First visit ever** (per browser, tracked in `localStorage`): a one-time
+  popup explains that the Drafting toggle defaults off and has to be
+  switched on for anything to update live. Never shown again after it's
+  dismissed.
 - **Drafting toggle OFF** (default): no network calls at all.
 - **Drafting toggle ON**: polls every 7 seconds. If the sheet goes 10
   straight minutes without a change, it flips itself back off and shows a
