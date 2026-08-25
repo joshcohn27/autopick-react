@@ -65,7 +65,7 @@ export function AdpBoardPanel({ entries }: { entries: AdpBoardEntry[] }) {
     <section className="adp-board-panel">
       <div className="eyebrow">Available players by Average Draft Position (ADP)</div>
       <div className="note adp-board-note">
-        Sleeper and ESPN ADP Board
+        ADP Board from ESPN
       </div>
 
       <div style={controlsStyle}>
