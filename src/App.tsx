@@ -6,11 +6,22 @@ import { OverridePanel } from './components/OverridePanel';
 import { TradeNotesPanel } from './components/TradeNotesPanel';
 import { AdpBoardPanel } from './components/AdpBoardPanel';
 import { RostersPanel } from './components/RostersPanel';
+import { WelcomeModal } from './components/WelcomeModal';
+import { hasSeenWelcome, markWelcomeSeen } from './lib/welcome';
 
 type Tab = 'draft' | 'rosters';
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('draft');
+  // Lazy initializer so localStorage is only read once, on mount -- not on
+  // every render.
+  const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcome());
+
+  function dismissWelcome() {
+    markWelcomeSeen();
+    setShowWelcome(false);
+  }
+
   const {
     drafting, setDrafting,
     status, errorMessage, lastFetchAt,
@@ -27,6 +38,8 @@ export default function App() {
 
   return (
     <div className={drafting ? 'is-drafting' : ''}>
+      {showWelcome && <WelcomeModal onDismiss={dismissWelcome} />}
+
       {banner && (
         <div className="banner" role="status">
           {banner}
