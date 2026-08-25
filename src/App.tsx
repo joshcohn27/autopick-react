@@ -28,8 +28,11 @@ export default function App() {
   return (
     <div className={drafting ? 'is-drafting' : ''}>
       {banner && (
-        <div className="banner" role="status" onClick={dismissBanner}>
+        <div className="banner" role="status">
           {banner}
+          <button type="button" className="banner-dismiss" onClick={dismissBanner} aria-label="Dismiss">
+            ×
+          </button>
         </div>
       )}
 
