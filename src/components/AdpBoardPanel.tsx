@@ -5,10 +5,6 @@ type PositionFilter = AdpBoardEntry['position'] | 'ALL';
 
 const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
 
-function positionLabel(pos: string) {
-  return pos;
-}
-
 // Inline styles rather than new index.css rules -- this component's new
 // search/filter row is scoped entirely to this file. Values still reference
 // the site's existing CSS variables (nothing new introduced), modeled on
@@ -100,7 +96,7 @@ export function AdpBoardPanel({ entries }: { entries: AdpBoardEntry[] }) {
           filtered.map((e, i) => (
             <div className="adp-board-row" key={`${e.player}-${i}`}>
               <span className="adp-board-rank">{i + 1}</span>
-              <span className={`pos-tag pos-${e.position}`}>{positionLabel(e.position)}</span>
+              <span className={`pos-tag pos-${e.position}`}>{e.position}</span>
               <span className="adp-board-name">
                 {e.player}
                 {e.nflTeam ? ` · ${e.nflTeam}` : ''}
