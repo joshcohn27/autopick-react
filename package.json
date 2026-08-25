@@ -1,11 +1,13 @@
 {
   "name": "autopick-react",
   "private": true,
+  "description": "Live draft assistant for a fantasy dynasty league; reads a Google Sheet directly from the browser, read-only.",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --noEmit",
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run"
