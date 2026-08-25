@@ -377,7 +377,6 @@ export const ADP_DATA: Record<string, AdpEntry> = {
   'Max Brosmer': { position: 'QB', sleeper: null, espn: null, blended: 348.2 },
   'DJ Uiagalelei': { position: 'QB', sleeper: null, espn: null, blended: 348.6 },
   'Luke Altmyer': { position: 'QB', sleeper: null, espn: null, blended: 349.0 },
-  'James Cook III': { position: 'RB', sleeper: null, espn: null, blended: 349.4 },
   'Kenny Gainwell': { position: 'RB', sleeper: null, espn: null, blended: 349.8 },
   'MarShawn Lloyd': { position: 'RB', sleeper: null, espn: null, blended: 350.2 },
   'Kimani Vidal': { position: 'RB', sleeper: null, espn: null, blended: 350.6 },
