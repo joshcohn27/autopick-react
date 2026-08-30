@@ -352,8 +352,25 @@ export function computeSuggestion(
     return { kind: 'rosterFull' };
   }
 
-  const minPriority = Math.min(...openSlots.map(s => s.priority));
-  const targetSlots = openSlots.filter(s => s.priority === minPriority);
+  // K/DST are structurally priority-1 (dedicated) slots, same as
+  // QB/RB/WR/TE -- so left in the pecking order as-is, their still-open
+  // slots would keep minPriority pinned at 1 and block FLEX/bench from ever
+  // becoming the target before round 14, even though those are exactly the
+  // slots a team should keep filling in the meantime. Drop K/DST's open
+  // slots from consideration entirely pre-round-14, so priority falls
+  // through to FLEX/bench like K/DST weren't part of the roster yet.
+  const consideredSlots = currentRound < KICKER_DEFENSE_MIN_ROUND
+    ? openSlots.filter(s => s.name !== 'DST' && s.name !== 'K')
+    : openSlots;
+
+  if (consideredSlots.length === 0) {
+    // Only K and/or DST slots remain open, and they're held back this
+    // early -- nothing to suggest yet, but the roster isn't actually full.
+    return { kind: 'kickerDefenseHeldBack', openSlotSummary: summarizeSlots(openSlots), minRound: KICKER_DEFENSE_MIN_ROUND };
+  }
+
+  const minPriority = Math.min(...consideredSlots.map(s => s.priority));
+  const targetSlots = consideredSlots.filter(s => s.priority === minPriority);
   const eligiblePositions = new Set<string>();
   targetSlots.forEach(s => s.eligible.forEach(p => eligiblePositions.add(p)));
 
@@ -361,12 +378,6 @@ export function computeSuggestion(
   let positionsToCheck = eligiblePositions.has('ANY')
     ? Object.keys(CONFIG.RANKINGS_COLUMNS)
     : [...eligiblePositions];
-
-  // Hold K/DST back until round 14, regardless of open slots or priority --
-  // see KICKER_DEFENSE_MIN_ROUND above.
-  if (currentRound < KICKER_DEFENSE_MIN_ROUND) {
-    positionsToCheck = positionsToCheck.filter(pos => pos !== 'K' && pos !== 'DST');
-  }
 
   // Bench slots specifically (priority 3, i.e. every dedicated + FLEX slot
   // is already filled and only bench remains open): narrow further to

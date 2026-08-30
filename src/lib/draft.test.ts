@@ -531,10 +531,14 @@ describe('computeSuggestion — bench composition targets', () => {
 });
 
 describe('computeSuggestion — K/DST held back until round 14', () => {
-  // Every dedicated slot but K and DST is already filled, so the only
-  // priority-1 slots left open are K and DST themselves.
+  // Every dedicated slot, FLEX, AND all 7 bench slots filled (2 bench RB,
+  // 3 bench WR, 1 bench TE, 1 bench QB) -- the only slots left open
+  // anywhere in the 16-slot roster are DST and K.
   function teamPicksWithOnlyKAndDstOpen(): Pick[] {
-    return (['QB', 'RB', 'RB', 'WR', 'WR', 'TE'] as const).map((pos, i) => ({
+    return ([
+      'QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'RB',       // dedicated + FLEX (7)
+      'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'QB'        // bench (7): 3 RB, 3 WR, 1 TE, 1 QB
+    ] as const).map((pos, i) => ({
       round: i + 1, teamIndex: 0, pickNumber: i + 1,
       cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
     }));
@@ -546,9 +550,15 @@ describe('computeSuggestion — K/DST held back until round 14', () => {
       DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
     };
     const suggestion = computeSuggestion(0, teamPicksWithOnlyKAndDstOpen(), rankings, 13, 999);
-    // No non-K/DST position is eligible for these slots and K/DST are held
-    // back this early -- nothing compliant to suggest.
-    expect(suggestion.kind).toBe('noCandidates');
+    // Every other slot is genuinely filled and K/DST are held back this
+    // early -- distinct from noCandidates (nothing wrong with the data,
+    // it's a deliberate hold), and distinct from rosterFull (the roster
+    // genuinely isn't full yet).
+    expect(suggestion.kind).toBe('kickerDefenseHeldBack');
+    if (suggestion.kind === 'kickerDefenseHeldBack') {
+      expect(suggestion.minRound).toBe(14);
+      expect(Object.keys(suggestion.openSlotSummary).sort()).toEqual(['DST', 'K']);
+    }
   });
 
   it('round 14, same setup: K/DST become eligible again', () => {
@@ -574,6 +584,48 @@ describe('computeSuggestion — K/DST held back until round 14', () => {
     if (suggestion.kind === 'ok') {
       const allShown = [suggestion.primary, ...suggestion.primary.backups, ...suggestion.others];
       expect(allShown.every(c => c.position !== 'K' && c.position !== 'DST')).toBe(true);
+    }
+  });
+
+  // Regression coverage for the bug this rule introduced: K/DST are
+  // structurally priority-1 (dedicated) slots, same tier as QB/RB/WR/TE, so
+  // leaving their still-open slots in the priority calc would pin
+  // minPriority at 1 forever pre-round-14 and starve FLEX/bench of ever
+  // becoming the target -- Autopick would suggest nothing at all once every
+  // OTHER dedicated slot was filled, well before round 14.
+  it('round 5, only FLEX/K/DST open (every other dedicated slot filled): suggests FLEX instead of stalling on held-back K/DST', () => {
+    const teamPicks = (['QB', 'RB', 'RB', 'WR', 'WR', 'TE'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+    const rankings: RankingsByPosition = {
+      RB: [{ rank: 1, position: 'RB', player: 'Flex RB', nflTeam: 'AAA' }],
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicks, rankings, 5, 50);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Flex RB');
+      expect(suggestion.primary.slotName).toBe('FLEX');
+    }
+  });
+
+  it('round 5, every dedicated slot + FLEX filled, only bench/K/DST open: suggests a bench pick instead of stalling on held-back K/DST', () => {
+    const teamPicks = (['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'RB'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+    const rankings: RankingsByPosition = {
+      WR: [{ rank: 1, position: 'WR', player: 'Bench WR', nflTeam: 'AAA' }],
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicks, rankings, 5, 70);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Bench WR');
+      expect(suggestion.primary.slotName).toBe('BENCH');
     }
   });
 });

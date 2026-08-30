@@ -82,6 +82,12 @@ export interface SuggestionCandidate extends RankingEntry {
 export type Suggestion =
   | { kind: 'rosterFull' }
   | { kind: 'noCandidates'; openSlotSummary: Record<string, number> }
+  // Every remaining open slot is K and/or DST, but it's not yet round 14
+  // (see KICKER_DEFENSE_MIN_ROUND in draft.ts) -- distinct from
+  // 'noCandidates' because there's nothing wrong with the rankings data,
+  // it's a deliberate policy hold, and the UI should say so plainly rather
+  // than pointing someone at the rankings tab.
+  | { kind: 'kickerDefenseHeldBack'; openSlotSummary: Record<string, number>; minRound: number }
   | {
       kind: 'ok';
       openSlotSummary: Record<string, number>;

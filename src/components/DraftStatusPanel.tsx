@@ -88,6 +88,18 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
     );
   }
 
+  if (suggestion.kind === 'kickerDefenseHeldBack') {
+    return (
+      <>
+        <div className="eyebrow">Autopick would be</div>
+        <div className="empty-state">
+          Only {Object.keys(suggestion.openSlotSummary).join(' and ')} slot(s) remain open, and Autopick holds those
+          back until round {suggestion.minRound}.
+        </div>
+      </>
+    );
+  }
+
   if (suggestion.kind === 'noCandidates') {
     return (
       <>
