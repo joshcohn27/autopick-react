@@ -530,6 +530,54 @@ describe('computeSuggestion — bench composition targets', () => {
   });
 });
 
+describe('computeSuggestion — K/DST held back until round 14', () => {
+  // Every dedicated slot but K and DST is already filled, so the only
+  // priority-1 slots left open are K and DST themselves.
+  function teamPicksWithOnlyKAndDstOpen(): Pick[] {
+    return (['QB', 'RB', 'RB', 'WR', 'WR', 'TE'] as const).map((pos, i) => ({
+      round: i + 1, teamIndex: 0, pickNumber: i + 1,
+      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
+    }));
+  }
+
+  it('round 13, K/DST are the only open slots: refuses to suggest either, even as a reach fallback', () => {
+    const rankings: RankingsByPosition = {
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyKAndDstOpen(), rankings, 13, 999);
+    // No non-K/DST position is eligible for these slots and K/DST are held
+    // back this early -- nothing compliant to suggest.
+    expect(suggestion.kind).toBe('noCandidates');
+  });
+
+  it('round 14, same setup: K/DST become eligible again', () => {
+    const rankings: RankingsByPosition = {
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, teamPicksWithOnlyKAndDstOpen(), rankings, 14, 999);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(['K', 'DST']).toContain(suggestion.primary.position);
+    }
+  });
+
+  it('round 1, empty roster: K/DST are excluded from the cross-position comparison entirely, even though real ADP would favor them', () => {
+    const rankings: RankingsByPosition = {
+      RB: [{ rank: 1, position: 'RB', player: 'Some RB', nflTeam: 'AAA' }],
+      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
+      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+    };
+    const suggestion = computeSuggestion(0, [], rankings, 1, 1);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      const allShown = [suggestion.primary, ...suggestion.primary.backups, ...suggestion.others];
+      expect(allShown.every(c => c.position !== 'K' && c.position !== 'DST')).toBe(true);
+    }
+  });
+});
+
 describe('parseTradeNotes', () => {
   it('drops the section header and blank rows, keeps the actual notes', () => {
     const values = [

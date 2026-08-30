@@ -224,6 +224,13 @@ function summarizeSlots(openSlots: SlotInstance[]): Record<string, number> {
 // 1-4), looser mid-draft (5-10), off entirely late (11-16, null = no cap)
 // -- by then bench/depth picks are inherently unpredictable and shouldn't
 // be second-guessed by ADP.
+// K/DST are structurally priority-1 slots (see CONFIG.ROSTER_SLOTS) so they
+// become eligible targets from round 1 like any other dedicated slot -- but
+// nobody actually drafts a kicker or defense that early in this league.
+// Autopick must never suggest either position before this round, no matter
+// what else is going on (open slots, ADP, reach guardrails, etc).
+const KICKER_DEFENSE_MIN_ROUND = 14;
+
 function maxAllowedGap(round: number): number | null {
   if (round <= 4) return 10;
   if (round <= 10) return 20;
@@ -354,6 +361,12 @@ export function computeSuggestion(
   let positionsToCheck = eligiblePositions.has('ANY')
     ? Object.keys(CONFIG.RANKINGS_COLUMNS)
     : [...eligiblePositions];
+
+  // Hold K/DST back until round 14, regardless of open slots or priority --
+  // see KICKER_DEFENSE_MIN_ROUND above.
+  if (currentRound < KICKER_DEFENSE_MIN_ROUND) {
+    positionsToCheck = positionsToCheck.filter(pos => pos !== 'K' && pos !== 'DST');
+  }
 
   // Bench slots specifically (priority 3, i.e. every dedicated + FLEX slot
   // is already filled and only bench remains open): narrow further to
