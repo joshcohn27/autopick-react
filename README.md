@@ -4,6 +4,8 @@ A live draft assistant for the 1T8 Dynasty League. It reads the league's
 Google Sheet directly from the browser (no backend, no writes) and shows,
 in real time during the draft:
 
+Live site: https://autopick.joshbcohn.com
+
 - **Who's on the clock** and what round/pick it is
 - **What Autopick would draft** for that team, with reasoning and runner-up
   options
@@ -99,7 +101,8 @@ positions right below so whoever's drafting can overrule it in two seconds.
 
 ## Deployment
 
-Any static host that runs a Vite build works (Vercel, Netlify, etc). Set
-`VITE_SHEETS_API_KEY` and `VITE_SPREADSHEET_ID` in that platform's env var
-dashboard -- same names as `.env.local`. See [SETUP.md](SETUP.md) for
-restricting the API key to your domain.
+Hosted on Vercel at autopick.joshbcohn.com. Any static host that runs a
+Vite build works (Vercel, Netlify, etc). Set `VITE_SHEETS_API_KEY` and
+`VITE_SPREADSHEET_ID` in that platform's env var dashboard -- same names
+as `.env.local`. See [SETUP.md](SETUP.md) for restricting the API key to
+your domain.
