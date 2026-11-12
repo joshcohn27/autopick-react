@@ -3,6 +3,7 @@
 // it only ever writes plain values into the board cells (B3:O18), nothing else.
 // run it from the sheet (autopick > fill traded picks) or pick fillTradedPicks
 // next to the run button in the editor. it's first in the file so it's the default.
+// autopick > turn on auto-fill makes it run by itself after every change.
 
 const DRAFT_YEAR = 2027;
 const DRAFT_TAB = DRAFT_YEAR + ' Draft';
@@ -15,6 +16,11 @@ const FIRST_TEAM_COLUMN = 2;
 const TEAM_COUNT = 14;
 
 function fillTradedPicks() {
+  fillBoard(false);
+}
+
+// quiet = no popup, just the execution log (used by auto-fill)
+function fillBoard(quiet) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) {
     throw new Error('Open this from the draft sheet itself: Extensions > Apps Script inside the sheet.');
@@ -22,7 +28,7 @@ function fillTradedPicks() {
 
   const board = spreadsheet.getSheetByName(DRAFT_TAB);
   if (!board) {
-    showResult('No "' + DRAFT_TAB + '" tab found.');
+    showResult('No "' + DRAFT_TAB + '" tab found.', quiet);
     return;
   }
 
@@ -119,15 +125,57 @@ function fillTradedPicks() {
   if (!tradesSheet) {
     lines.push('', 'No "' + TRADES_TAB + '" tab found, so nothing counts as traded.');
   }
-  showResult(lines.join('\n'));
+  showResult(lines.join('\n'), quiet);
+}
+
+// runs by itself after any change to the sheet once auto-fill is on. rows
+// deleted from the trades tab only show up as a "change", not an "edit",
+// which is why this is an on-change trigger. a run with nothing to fix writes nothing.
+function autoFillTradedPicks() {
+  const lock = LockService.getDocumentLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return;
+  }
+  try {
+    fillBoard(true);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function removeAutoFillTriggers() {
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (trigger.getHandlerFunction() === 'autoFillTradedPicks') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+}
+
+function turnOnAutoFill() {
+  removeAutoFillTriggers();
+  ScriptApp.newTrigger('autoFillTradedPicks')
+    .forSpreadsheet(SpreadsheetApp.getActiveSpreadsheet())
+    .onChange()
+    .create();
+  fillBoard(true);
+  showResult('Auto-fill is on. Trade markers now update by themselves whenever the sheet changes.', false);
+}
+
+function turnOffAutoFill() {
+  removeAutoFillTriggers();
+  showResult('Auto-fill is off. Use Autopick > Fill traded picks to update markers.', false);
 }
 
 // popup when run from the sheet's menu. run from the editor there's no popup,
 // so the same text goes to the execution log instead.
-function showResult(text) {
+function showResult(text, quiet) {
   // save the writes now, so they land even while the popup waits for ok
   SpreadsheetApp.flush();
   console.log(text);
+  if (quiet) {
+    return;
+  }
   try {
     const ui = SpreadsheetApp.getUi();
     ui.alert('Fill traded picks', text, ui.ButtonSet.OK);
@@ -236,5 +284,8 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Autopick')
     .addItem('Fill traded picks', 'fillTradedPicks')
+    .addSeparator()
+    .addItem('Turn on auto-fill', 'turnOnAutoFill')
+    .addItem('Turn off auto-fill', 'turnOffAutoFill')
     .addToUi();
 }

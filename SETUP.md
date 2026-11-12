@@ -89,7 +89,11 @@ Install once:
 4. Autopick -> Fill traded picks. The first time, Google asks you to
    authorize it: pick your account, Advanced -> go to the project, Allow.
 
-Run it again any time the Trades tab changes. It only writes into empty or
+To keep it up to date on its own: Autopick -> Turn on auto-fill (Google asks
+to approve permissions again, since it now installs a trigger). After that,
+markers update a few seconds after any change, including deleted trade rows,
+with no popup. Autopick -> Turn off auto-fill stops it. Without auto-fill,
+run Fill traded picks again any time the Trades tab changes. It only writes into empty or
 marker-only cells in B3:O18, never touches a cell with a player or anything
 else typed in it, and lists what it changed or skipped in a popup. Bump
 `DRAFT_YEAR` at the top of the script each year, same as `config.ts`.
