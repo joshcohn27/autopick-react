@@ -54,7 +54,10 @@ function OwnedPickLabel({ pick }: { pick: OwnedPick }) {
 }
 
 function TeamCard({ ownership }: { ownership: TeamPickOwnership }) {
-  const tradedAwayText = ownership.tradedAway.map(formatTradedAwayPick).join(', ');
+  // a punished pick went to nobody, so it gets its own line instead of "traded away"
+  const traded = ownership.tradedAway.filter(pick => pick.newOwner !== null);
+  const punished = ownership.tradedAway.filter(pick => pick.newOwner === null);
+  const tradedAwayText = traded.map(formatTradedAwayPick).join(', ');
 
   return (
     <section className="roster-card">
@@ -76,8 +79,21 @@ function TeamCard({ ownership }: { ownership: TeamPickOwnership }) {
         </ul>
       )}
 
-      {ownership.tradedAway.length > 0 && (
+      {traded.length > 0 && (
         <div className="pick-traded-away">traded away: {tradedAwayText}</div>
+      )}
+
+      {punished.length > 0 && (
+        <div className="pick-traded-away">
+          lost to punishment:{' '}
+          {punished.map((pick, i) => (
+            <span key={pick.round}>
+              {i > 0 && ', '}
+              {ordinal(pick.round)} rounder
+              {pick.notes && <span className="pick-notes"> {pick.notes}</span>}
+            </span>
+          ))}
+        </div>
       )}
     </section>
   );
