@@ -52,7 +52,8 @@ export default function App() {
     refreshOnce,
     teams,
     overrideTeam, setOverrideTeam,
-    onClock, activeTeamIndex, draftComplete,
+    onClock, activeTeamIndex, viaTeamIndex, draftComplete,
+    tradeLogError,
     suggestion,
     tradeNotes,
     adpBoard,
@@ -109,10 +110,18 @@ export default function App() {
             teams={teams}
             onClock={onClock}
             activeTeamIndex={activeTeamIndex}
+            viaTeamIndex={viaTeamIndex}
             overrideActive={overrideTeam !== null}
             draftComplete={draftComplete}
             suggestion={suggestion}
           />
+
+          {tradeLogError && (
+            <div className="trade-notes-panel">
+              Couldn't load the {CONFIG.TRADE_LOG_TAB} tab, so traded picks aren't applied. Use the override below if a
+              pick was traded.
+            </div>
+          )}
 
           <TradeNotesPanel notes={tradeNotes} />
 

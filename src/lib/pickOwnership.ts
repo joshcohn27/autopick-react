@@ -135,6 +135,31 @@ export function parseTradeRows(
   return { trades, warnings };
 }
 
+// who owns one pick right now: the lowest matching trade row wins,
+// otherwise it's still the original team's
+export function currentPickOwner(trades: PickTrade[], year: number, round: number, originalTeam: string): string {
+  let owner = originalTeam;
+  for (const trade of trades) {
+    const samePick = trade.year === year && trade.round === round && trade.originalTeam === originalTeam;
+    if (samePick) {
+      owner = trade.newOwner;
+    }
+  }
+  return owner;
+}
+
+// the same thing by team index, for the draft board
+export function pickOwnerLookup(teams: string[], year: number, trades: PickTrade[]): (round: number, columnTeamIndex: number) => number {
+  return (round, columnTeamIndex) => {
+    const owner = currentPickOwner(trades, year, round, teams[columnTeamIndex]);
+    const ownerIndex = teams.indexOf(owner);
+    if (ownerIndex === -1) {
+      return columnTeamIndex;
+    }
+    return ownerIndex;
+  };
+}
+
 // the default year plus any later years that show up in the trades
 export function availableYears(trades: PickTrade[], defaultYear: number): number[] {
   const years = new Set<number>();

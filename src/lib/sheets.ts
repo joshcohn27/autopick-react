@@ -31,19 +31,41 @@ export async function fetchDraftHeaderRow(): Promise<unknown[] | undefined> {
   return values[0];
 }
 
+// tradeLogValues is null (with tradeLogError set) when the trades tab
+// couldn't load, so the draft board still works without it
 export async function fetchSheetData(): Promise<{
   draftValues: unknown[][];
   rankingValues: unknown[][];
   tradeValues: unknown[][];
-  tradeLogValues: unknown[][];
+  tradeLogValues: unknown[][] | null;
+  tradeLogError: string | null;
 }> {
-  const [draftValues, rankingValues, tradeValues, tradeLogValues] = await Promise.all([
+  const tradeLog = fetchTradeLog().then(
+    values => ({ values, error: null }),
+    (err: unknown) => ({ values: null, error: errorText(err) })
+  );
+
+  const [draftValues, rankingValues, tradeValues, tradeLogResult] = await Promise.all([
     fetchRange(CONFIG.DRAFT_TAB, CONFIG.DRAFT_RANGE),
     fetchRange(CONFIG.RANKINGS_TAB, CONFIG.RANKINGS_RANGE),
     fetchRange(CONFIG.DRAFT_TAB, CONFIG.TRADES_RANGE),
-    fetchTradeLog()
+    tradeLog
   ]);
-  return { draftValues, rankingValues, tradeValues, tradeLogValues };
+
+  return {
+    draftValues,
+    rankingValues,
+    tradeValues,
+    tradeLogValues: tradeLogResult.values,
+    tradeLogError: tradeLogResult.error
+  };
+}
+
+function errorText(err: unknown): string {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
 }
 
 // a tab that doesn't exist yet comes back as a 400 "unable to parse range"

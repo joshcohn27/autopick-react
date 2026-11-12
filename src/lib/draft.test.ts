@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import {
   parseDraftCell, parseRankingCell, colLetterToIndex,
   parseDraftGrid, parseTeamNames, snakeOrderForRound, analyzeGrid, computeOpenSlots, parseTradeNotes,
-  computeSuggestion, narrowBenchPositions, countRemainingPicks
+  computeSuggestion, narrowBenchPositions, countRemainingPicks, resolveOnClockTeam
 } from './draft';
 import type { Pick, RankingsByPosition } from '../types';
 
@@ -832,5 +832,67 @@ describe('parseTradeNotes', () => {
 
   it('returns an empty list when there are no trades', () => {
     expect(parseTradeNotes([['Traded Draft Picks'], [''], ['']])).toEqual([]);
+  });
+});
+
+describe('who is on the clock with pick ownership', () => {
+  // column 2 owns the slot on the clock, but the trades tab says team 5 has it now
+  const onClock = { round: 3, teamIndex: 2, pickNumber: 31 };
+  const tradedToFive = (round: number, col: number) => {
+    if (round === 3 && col === 2) {
+      return 5;
+    }
+    return col;
+  };
+
+  it('puts the current owner of a traded pick on the clock, via the original team', () => {
+    expect(resolveOnClockTeam(onClock, null, tradedToFive)).toEqual({ teamIndex: 5, viaTeamIndex: 2 });
+  });
+
+  it('leaves an untraded pick with its own team and no via note', () => {
+    expect(resolveOnClockTeam({ ...onClock, round: 4 }, null, tradedToFive)).toEqual({ teamIndex: 2, viaTeamIndex: null });
+  });
+
+  it('lets the manual override beat the ownership data', () => {
+    expect(resolveOnClockTeam(onClock, 7, tradedToFive)).toEqual({ teamIndex: 7, viaTeamIndex: null });
+  });
+
+  it('falls back to the column team when the trades tab did not load', () => {
+    expect(resolveOnClockTeam(onClock, null, undefined)).toEqual({ teamIndex: 2, viaTeamIndex: null });
+  });
+
+  it('builds the suggestion from the new owner: filled traded slots count toward their roster', () => {
+    const values: unknown[][] = [];
+    values[0] = ['Round', ...CONFIG.TEAMS];
+    for (let r = 1; r <= 16; r++) {
+      values[r] = ['Round' + r, ...CONFIG.TEAMS.map(() => '')];
+    }
+    // round 1, column 0 holds a QB, but that pick belongs to team 3 now
+    values[1][1] = 'Josh Allen, BUF -QB';
+    const grid = parseDraftGrid(values, CONFIG.TEAMS);
+    const ownerOf = (round: number, col: number) => {
+      if (round === 1 && col === 0) {
+        return 3;
+      }
+      return col;
+    };
+
+    const { picks } = analyzeGrid(grid, ownerOf);
+    expect(picks[0].teamIndex).toBe(3);
+
+    const withoutOwnership = analyzeGrid(grid);
+    expect(withoutOwnership.picks[0].teamIndex).toBe(0);
+  });
+
+  it('still lets a trade marker typed in the cell win over the trades tab', () => {
+    const values: unknown[][] = [];
+    values[0] = ['Round', ...CONFIG.TEAMS];
+    for (let r = 1; r <= 16; r++) {
+      values[r] = ['Round' + r, ...CONFIG.TEAMS.map(() => '')];
+    }
+    values[1][1] = `${CONFIG.TEAMS[6].toUpperCase()}: Josh Allen, BUF -QB`;
+    const grid = parseDraftGrid(values, CONFIG.TEAMS);
+    const { picks } = analyzeGrid(grid, () => 3);
+    expect(picks[0].teamIndex).toBe(6);
   });
 });

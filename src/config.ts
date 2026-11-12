@@ -99,7 +99,7 @@ export const CONFIG = {
     K_ALLOWED_ROUND: 13,
     K_RECOMMENDED_ROUND: 14,
     // backup qbs/tes rank lower on the bench before these rounds
-    BACKUP_QB_ROUND: 11,
+    BACKUP_QB_ROUND: 12,
     BACKUP_TE_ROUND: 14,
     // from this round on, the bench leans rb/wr over qb/te
     UPSIDE_ROUND: 16

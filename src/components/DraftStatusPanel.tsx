@@ -8,16 +8,17 @@ interface Props {
   teams: string[];
   onClock: OnClock | null;
   activeTeamIndex: number | null;
+  viaTeamIndex: number | null;
   overrideActive: boolean;
   draftComplete: boolean;
   suggestion: Suggestion | null;
 }
 
 // who's on the clock plus what autopick would draft for them, in one card
-export function DraftStatusPanel({ teams, onClock, activeTeamIndex, overrideActive, draftComplete, suggestion }: Props) {
+export function DraftStatusPanel({ teams, onClock, activeTeamIndex, viaTeamIndex, overrideActive, draftComplete, suggestion }: Props) {
   return (
     <section className="draft-status-panel">
-      {renderClockBlock(teams, onClock, activeTeamIndex, overrideActive, draftComplete)}
+      {renderClockBlock(teams, onClock, activeTeamIndex, viaTeamIndex, overrideActive, draftComplete)}
       {!draftComplete && renderSuggestionBlock(suggestion)}
     </section>
   );
@@ -27,6 +28,7 @@ function renderClockBlock(
   teams: string[],
   onClock: OnClock | null,
   activeTeamIndex: number | null,
+  viaTeamIndex: number | null,
   overrideActive: boolean,
   draftComplete: boolean
 ) {
@@ -49,7 +51,10 @@ function renderClockBlock(
   return (
     <div className="clock-block">
       <div className="eyebrow">{meta}</div>
-      <div className="on-clock">{teamName}</div>
+      <div className="on-clock">
+        {teamName}
+        {viaTeamIndex !== null && <span className="via-note"> via {teams[viaTeamIndex]}</span>}
+      </div>
     </div>
   );
 }

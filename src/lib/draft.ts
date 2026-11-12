@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import { lookupAdp } from './adp';
 import { DEFENSE_LABEL_SOURCE, canonicalDefenseName, findDefense, isDefenseLabel } from '../data/defenses';
 import type {
-  DraftCell, Pick, OnClock, RankingEntry, RankingsByPosition,
+  DraftCell, Pick, OnClock, PickOwnerLookup, RankingEntry, RankingsByPosition,
   SlotInstance, Suggestion, SuggestionCandidate, Position, RosterSlotView
 } from '../types';
 
@@ -189,7 +189,13 @@ export function snakeOrderForRound(roundIndexZeroBased: number): number[] {
 // is a marker, otherwise the column it's sitting in. "On the clock" always
 // advances by column/round position, unaffected by trade attribution — the
 // draft slot order itself doesn't change when a pick's rights get traded.
-export function analyzeGrid(rounds: (DraftCell | null)[][]): { picks: Pick[]; onClock: OnClock | null } {
+//
+// ownerOf (from the trades tab) credits a filled traded slot to its current
+// owner; a trade marker typed in the cell still wins over it.
+export function analyzeGrid(
+  rounds: (DraftCell | null)[][],
+  ownerOf?: PickOwnerLookup
+): { picks: Pick[]; onClock: OnClock | null } {
   const picks: Pick[] = [];
   let onClock: OnClock | null = null;
 
@@ -198,7 +204,11 @@ export function analyzeGrid(rounds: (DraftCell | null)[][]): { picks: Pick[]; on
     for (const teamIdx of order) {
       const cell = rounds[r][teamIdx];
       if (cell) {
-        const effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? teamIdx;
+        let slotOwner = teamIdx;
+        if (ownerOf) {
+          slotOwner = ownerOf(r + 1, teamIdx);
+        }
+        const effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? slotOwner;
         picks.push({ round: r + 1, teamIndex: effectiveTeamIndex, cell, pickNumber: picks.length + 1 });
       } else if (onClock === null) {
         onClock = { round: r + 1, teamIndex: teamIdx, pickNumber: picks.length + 1 };
@@ -207,6 +217,31 @@ export function analyzeGrid(rounds: (DraftCell | null)[][]): { picks: Pick[]; on
   }
 
   return { picks, onClock };
+}
+
+// who the suggestion is for: the manual override wins, then the pick's
+// current owner from the trades tab, then the column it sits in.
+// viaTeamIndex is the original team when the pick was traded.
+export function resolveOnClockTeam(
+  onClock: OnClock | null,
+  overrideTeam: number | null,
+  ownerOf?: PickOwnerLookup
+): { teamIndex: number | null; viaTeamIndex: number | null } {
+  if (overrideTeam !== null) {
+    return { teamIndex: overrideTeam, viaTeamIndex: null };
+  }
+  if (!onClock) {
+    return { teamIndex: null, viaTeamIndex: null };
+  }
+  if (!ownerOf) {
+    return { teamIndex: onClock.teamIndex, viaTeamIndex: null };
+  }
+
+  const owner = ownerOf(onClock.round, onClock.teamIndex);
+  if (owner === onClock.teamIndex) {
+    return { teamIndex: owner, viaTeamIndex: null };
+  }
+  return { teamIndex: owner, viaTeamIndex: onClock.teamIndex };
 }
 
 export function buildSlotInstances(): SlotInstance[] {

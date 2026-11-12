@@ -4,12 +4,13 @@ import { fetchDraftHeaderRow, fetchSheetData } from '../lib/sheets';
 import {
   parseDraftGrid, parseRankings, parseTeamNames, gridSignature,
   analyzeGrid, computeSuggestion, parseTradeNotes, draftedNameSet, buildTeamRoster,
-  countRemainingPicks
+  countRemainingPicks, resolveOnClockTeam
 } from '../lib/draft';
-import { buildPickOwnership, parseTradeRows } from '../lib/pickOwnership';
+import { buildPickOwnership, parseTradeRows, pickOwnerLookup } from '../lib/pickOwnership';
+import type { PickTrade } from '../lib/pickOwnership';
 import { computeAdpBoard } from '../lib/adp';
 import type { AdpBoardEntry } from '../lib/adp';
-import type { DraftCell, OnClock, Pick, RankingsByPosition, Suggestion, TeamRoster } from '../types';
+import type { DraftCell, OnClock, Pick, PickOwnerLookup, RankingsByPosition, Suggestion, TeamRoster } from '../types';
 
 type FetchStatus = 'idle' | 'loading' | 'ok' | 'error';
 
@@ -25,7 +26,9 @@ export function useAutopick() {
   const [grid, setGrid] = useState<(DraftCell | null)[][] | null>(null);
   const [rankings, setRankings] = useState<RankingsByPosition | null>(null);
   const [tradeNotes, setTradeNotes] = useState<string[]>([]);
-  const [tradeLogRows, setTradeLogRows] = useState<unknown[][]>([]);
+  // null when the trades tab couldn't load
+  const [tradeLogRows, setTradeLogRows] = useState<unknown[][] | null>([]);
+  const [tradeLogError, setTradeLogError] = useState<string | null>(null);
 
   const pollHandle = useRef<number | null>(null);
   const lastSignature = useRef<string | null>(null);
@@ -38,7 +41,7 @@ export function useAutopick() {
   const refreshOnce = useCallback(async () => {
     setStatus('loading');
     try {
-      const { draftValues, rankingValues, tradeValues, tradeLogValues } = await fetchSheetData();
+      const { draftValues, rankingValues, tradeValues, tradeLogValues, tradeLogError: logError } = await fetchSheetData();
       // Team names come live from the sheet's own header row every fetch —
       // never hardcoded — so a rename in the sheet shows up automatically.
       const liveTeams = parseTeamNames(draftValues[0]);
@@ -50,6 +53,7 @@ export function useAutopick() {
       setRankings(parsedRankings);
       setTradeNotes(parseTradeNotes(tradeValues));
       setTradeLogRows(tradeLogValues);
+      setTradeLogError(logError);
       setLastFetchAt(Date.now());
       setStatus('ok');
       setErrorMessage(null);
@@ -109,16 +113,25 @@ export function useAutopick() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Derived draft state
+  // Derived draft state. without the trades tab, ownership falls back to
+  // the column each pick sits in (the old behavior).
+  let trades: PickTrade[] | null = null;
+  let ownerOf: PickOwnerLookup | undefined;
+  if (tradeLogRows) {
+    trades = parseTradeRows(tradeLogRows, teams, CONFIG.TOTAL_ROUNDS).trades;
+    ownerOf = pickOwnerLookup(teams, CONFIG.DRAFT_YEAR, trades);
+  }
+
   let onClock: OnClock | null = null;
   let picks: Pick[] = [];
   if (grid) {
-    const analyzed = analyzeGrid(grid);
+    const analyzed = analyzeGrid(grid, ownerOf);
     onClock = analyzed.onClock;
     picks = analyzed.picks;
   }
 
-  const activeTeamIndex = overrideTeam !== null ? overrideTeam : onClock ? onClock.teamIndex : null;
+  const onClockTeam = resolveOnClockTeam(onClock, overrideTeam, ownerOf);
+  const activeTeamIndex = onClockTeam.teamIndex;
 
   let suggestion: Suggestion | null = null;
   if (rankings && activeTeamIndex !== null) {
@@ -131,7 +144,7 @@ export function useAutopick() {
     // meaningless pick number.
     const round = onClock ? onClock.round : 16;
     const pickNumber = onClock ? onClock.pickNumber : Infinity;
-    const remainingPicks = remainingPicksFor(activeTeamIndex, teams, grid, tradeLogRows);
+    const remainingPicks = remainingPicksFor(activeTeamIndex, teams, grid, trades);
     suggestion = computeSuggestion(activeTeamIndex, picks, rankings, round, pickNumber, remainingPicks);
   }
 
@@ -166,6 +179,8 @@ export function useAutopick() {
     setOverrideTeam,
     onClock,
     activeTeamIndex,
+    viaTeamIndex: onClockTeam.viaTeamIndex,
+    tradeLogError,
     draftComplete: grid !== null && onClock === null && overrideTeam === null,
     suggestion,
     tradeNotes,
@@ -178,17 +193,17 @@ export function useAutopick() {
 // picks this team still has to make this draft, from pick ownership (trades
 // tab on top of everyone owning their own) and which of those cells are
 // still blank. always at least 1, since the team is picking right now.
+// undefined (one pick per round) when the trades tab didn't load.
 function remainingPicksFor(
   teamIndex: number,
   teams: string[],
   grid: (DraftCell | null)[][] | null,
-  tradeLogRows: unknown[][]
+  trades: PickTrade[] | null
 ): number | undefined {
-  if (!grid) {
+  if (!grid || !trades) {
     return undefined;
   }
 
-  const { trades } = parseTradeRows(tradeLogRows, teams, CONFIG.TOTAL_ROUNDS);
   const ownership = buildPickOwnership(teams, CONFIG.TOTAL_ROUNDS, CONFIG.DRAFT_YEAR, trades);
   const teamCard = ownership.find(card => card.team === teams[teamIndex]);
   if (!teamCard) {

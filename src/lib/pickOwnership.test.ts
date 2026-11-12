@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  availableYears, buildPickOwnership, formatOwnedPick, formatTradedAwayPick,
-  ordinal, parseTradeRows
+  availableYears, buildPickOwnership, currentPickOwner, formatOwnedPick, formatTradedAwayPick,
+  ordinal, parseTradeRows, pickOwnerLookup
 } from './pickOwnership';
 import type { TeamPickOwnership } from './pickOwnership';
 
@@ -189,5 +189,28 @@ describe('pick ownership', () => {
       '1st rounder (via Brad K)',
       '1st rounder (via Josh C)'
     ]);
+  });
+});
+
+describe('current pick owner', () => {
+  const rows = [
+    [2027, 3, 'Guppy', 'Brad K', ''],
+    [2027, 3, 'Guppy', 'Alex W', 'flipped'],
+    [2028, 1, 'Josh C', 'Guppy', '']
+  ];
+
+  it('uses the lowest matching row, the right year, and defaults to the original team', () => {
+    const { trades } = parseTradeRows([HEADER, ...rows], TEAMS, ROUNDS);
+    expect(currentPickOwner(trades, 2027, 3, 'Guppy')).toBe('Alex W');
+    expect(currentPickOwner(trades, 2027, 1, 'Josh C')).toBe('Josh C');
+    expect(currentPickOwner(trades, 2028, 1, 'Josh C')).toBe('Guppy');
+    expect(currentPickOwner(trades, 2027, 2, 'Brad K')).toBe('Brad K');
+  });
+
+  it('maps column indexes to owner indexes for the draft board', () => {
+    const { trades } = parseTradeRows([HEADER, ...rows], TEAMS, ROUNDS);
+    const ownerOf = pickOwnerLookup(TEAMS, 2027, trades);
+    expect(ownerOf(3, TEAMS.indexOf('Guppy'))).toBe(TEAMS.indexOf('Alex W'));
+    expect(ownerOf(1, TEAMS.indexOf('Guppy'))).toBe(TEAMS.indexOf('Guppy'));
   });
 });

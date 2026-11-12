@@ -250,6 +250,12 @@ input {
   font-weight: bold;
 }
 
+.via-note {
+  font-size: 14px;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
 .rec-row {
   display: flex;
   align-items: center;
