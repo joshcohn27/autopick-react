@@ -125,6 +125,8 @@ function fillTradedPicks() {
 // popup when run from the sheet's menu. run from the editor there's no popup,
 // so the same text goes to the execution log instead.
 function showResult(text) {
+  // save the writes now, so they land even while the popup waits for ok
+  SpreadsheetApp.flush();
   console.log(text);
   try {
     const ui = SpreadsheetApp.getUi();
