@@ -115,13 +115,27 @@ function readOwners(trades, teamNames, teamIndexByName, badRows) {
   return owners;
 }
 
+// popup when run from the sheet's menu. run from the editor there's no popup,
+// so the same text goes to the execution log instead.
+function showResult(text) {
+  console.log(text);
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Fill traded picks', text, ui.ButtonSet.OK);
+  } catch (err) {
+    console.log('(no popup when run from the editor, see the log above)');
+  }
+}
+
 function fillTradedPicks() {
-  const ui = SpreadsheetApp.getUi();
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) {
+    throw new Error('Open this from the draft sheet itself: Extensions > Apps Script inside the sheet.');
+  }
 
   const board = spreadsheet.getSheetByName(DRAFT_TAB);
   if (!board) {
-    ui.alert('Fill traded picks', 'No "' + DRAFT_TAB + '" tab found.', ui.ButtonSet.OK);
+    showResult('No "' + DRAFT_TAB + '" tab found.');
     return;
   }
 
@@ -218,5 +232,5 @@ function fillTradedPicks() {
   if (!tradesSheet) {
     lines.push('', 'No "' + TRADES_TAB + '" tab found, so nothing counts as traded.');
   }
-  ui.alert('Fill traded picks', lines.join('\n'), ui.ButtonSet.OK);
+  showResult(lines.join('\n'));
 }
