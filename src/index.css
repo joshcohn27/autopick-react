@@ -1,31 +1,62 @@
-/* plain black and white, just enough to lay things out */
-body {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 16px;
-  font-family: sans-serif;
-  line-height: 1.4;
-  color: #000;
-  background: #fff;
+:root {
+  --accent: #1f3a5f;
+  --accent-text: #ffffff;
+  --page-bg: #f2f3f5;
+  --panel-bg: #ffffff;
+  --header-row-bg: #e9ebee;
+  --border: #d4d7dc;
+  --text: #1a1a1a;
+  --text-muted: #5f6368;
+  --row-hover: #f5f7fa;
+  --good: #2e7d32;
+  --bad: #c62828;
+
+  /* width of the content column under the header bar */
+  --content-width: min(968px, calc(100% - 32px));
 }
 
-.topbar,
-.controls,
-.tab-nav,
-.adp-board-filters,
-.override-controls,
-.pick-ownership-controls,
-.pick-card-header {
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--page-bg);
+}
+
+h1 { font-size: 24px; font-weight: bold; }
+h2 { font-size: 20px; font-weight: bold; }
+h3 { font-size: 16px; font-weight: bold; }
+
+a {
+  color: var(--accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ---------- header bar ---------- */
+
+/* full-width bar, with its contents lined up with the column below */
+.topbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px 16px;
+  padding: 10px max(16px, calc((100% - 968px) / 2));
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
-.topbar,
-.pick-ownership-controls,
-.pick-card-header {
-  justify-content: space-between;
+.topbar :focus-visible {
+  outline-color: var(--accent-text);
 }
 
 .wordmark-main {
@@ -34,90 +65,282 @@ body {
   font-weight: bold;
 }
 
-.tab-nav {
-  margin: 16px 0;
+.wordmark-sub,
+.topbar .status-line {
+  font-size: 13px;
+  color: var(--accent-text);
 }
 
-.is-active {
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+/* ---------- tabs ---------- */
+
+.tab-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: var(--content-width);
+  margin: 0 auto 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab-nav a {
+  padding: 8px 12px;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab-nav a:hover {
+  color: var(--accent);
+}
+
+.tab-nav a.is-active {
+  color: var(--accent);
   font-weight: bold;
+  border-bottom-color: var(--accent);
+}
+
+/* ---------- page column + panels ---------- */
+
+main {
+  width: var(--content-width);
+  margin: 0 auto;
+  padding-bottom: 40px;
 }
 
 main > section,
 .banner,
-.roster-card {
-  border: 1px solid #000;
+.roster-card,
+.modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+main > section {
   padding: 12px;
   margin-bottom: 12px;
 }
 
-.rosters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+main > section p {
+  margin: 0;
+}
+
+.banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
+  width: var(--content-width);
+  margin: 12px auto;
+  padding: 8px 12px;
 }
 
-.rosters-grid .roster-card {
-  margin-bottom: 0;
-}
-
-.eyebrow,
-.roster-card-header,
-.roster-group-label,
-.backups-label,
-.slots-line {
+.eyebrow {
+  font-size: 14px;
   font-weight: bold;
+  margin-bottom: 6px;
+}
+
+.status-line,
+.note,
+.rec-meta,
+.slots-line,
+.empty-state {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.note {
   margin-top: 8px;
 }
 
-.on-clock,
-.rec-name {
+/* ---------- warnings ---------- */
+
+.trade-notes-panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--bad);
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.trade-notes-panel ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.pick-ownership-row-text {
+  color: var(--text-muted);
+}
+
+/* ---------- buttons + inputs ---------- */
+
+button,
+select,
+input {
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+button {
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--row-hover);
+}
+
+button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+select,
+input {
+  padding: 4px 8px;
+}
+
+.modal-dismiss,
+.tab-btn.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.modal-dismiss:hover,
+.tab-btn.is-active:hover {
+  background: var(--accent);
+}
+
+.override-panel summary {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.override-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ---------- draft status ---------- */
+
+.clock-block {
+  margin-bottom: 12px;
+}
+
+.on-clock {
   font-size: 24px;
   font-weight: bold;
 }
 
-.wordmark-sub,
-.status-line,
-.note,
-.rec-meta,
-.empty-state,
-.roster-slot-name,
-.roster-empty,
-.backup-rank,
-.pick-count,
-.pick-notes,
-.pick-traded-away,
-.pick-ownership-row-text {
-  color: #555;
-}
-
-.pick-notes,
-.pick-traded-away {
-  font-size: 12px;
-}
-
-.rec-row,
-.backup-row,
-.roster-row,
-.adp-board-row {
+.rec-row {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
-.pos-tag {
+.rec-name {
+  font-size: 20px;
   font-weight: bold;
 }
 
-.pick-list {
-  margin: 8px 0 0;
-  padding-left: 20px;
+.backups-label {
+  font-size: 14px;
+  font-weight: bold;
+  margin: 12px 0 6px;
 }
 
-.adp-board-controls {
-  margin: 8px 0;
+.pos-tag {
+  font-size: 12px;
+  font-weight: bold;
+  text-align: center;
+  padding: 0 4px;
+  background: var(--header-row-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* ---------- row lists (adp board, other options, rosters, picks) ---------- */
+
+.backups,
+.adp-board-list {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.backup-row,
+.adp-board-row,
+.roster-row,
+.pick-list li {
+  display: grid;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.backup-row:hover,
+.adp-board-row:hover,
+.roster-row:hover,
+.pick-list li:hover {
+  background: var(--row-hover);
+}
+
+.backup-row:last-child,
+.adp-board-row:last-child {
+  border-bottom: none;
+}
+
+.adp-board-row {
+  grid-template-columns: 2.5em 3em 1fr auto;
+}
+
+.backup-row {
+  grid-template-columns: 3em 1fr auto;
+}
+
+.roster-row {
+  grid-template-columns: 4em 1fr auto;
+}
+
+.pick-list li {
+  display: block;
+}
+
+.adp-board-rank,
+.backup-rank {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
 }
 
 .adp-board-controls input {
   width: 100%;
+  margin: 8px 0;
+}
+
+.adp-board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   margin-bottom: 8px;
 }
 
@@ -126,6 +349,105 @@ main > section,
   overflow-y: auto;
 }
 
+.adp-board-list .empty-state {
+  padding: 6px 10px;
+}
+
+/* ---------- team cards (rosters + pick ownership) ---------- */
+
+.rosters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+/* clips the header background to the rounded corners */
+.roster-card {
+  overflow: hidden;
+}
+
+.roster-card > .roster-card-header,
+.pick-card-header {
+  padding: 6px 10px;
+  background: var(--header-row-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.roster-card-header {
+  font-weight: bold;
+}
+
+.pick-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.pick-count {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.roster-group-label {
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: bold;
+  background: var(--header-row-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.roster-slot-name,
+.roster-empty {
+  color: var(--text-muted);
+}
+
+.roster-card > .roster-list:last-child .roster-row:last-child,
+.roster-card > .pick-list:last-child li:last-child {
+  border-bottom: none;
+}
+
+.pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+div.pick-list,
+.roster-unassigned-note {
+  padding: 6px 10px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.pick-via {
+  color: var(--text-muted);
+}
+
+.pick-notes {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pick-traded-away {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ---------- pick ownership controls ---------- */
+
+.pick-ownership-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+/* ---------- welcome popup ---------- */
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -133,16 +455,15 @@ main > section,
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--text) 50%, transparent);
 }
 
 .modal {
   max-width: 420px;
   padding: 16px;
-  border: 1px solid #000;
-  background: #fff;
 }
 
 .modal-title {
+  font-size: 16px;
   font-weight: bold;
 }

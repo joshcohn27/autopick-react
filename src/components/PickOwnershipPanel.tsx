@@ -2,9 +2,9 @@ import { useMemo, useState } from 'react';
 import { CONFIG } from '../config';
 import { useTradeLog } from '../hooks/useTradeLog';
 import {
-  availableYears, buildPickOwnership, formatOwnedPick, formatTradedAwayPick, parseTradeRows
+  availableYears, buildPickOwnership, formatTradedAwayPick, ordinal, parseTradeRows
 } from '../lib/pickOwnership';
-import type { TeamPickOwnership, TradeRowWarning } from '../lib/pickOwnership';
+import type { OwnedPick, TeamPickOwnership, TradeRowWarning } from '../lib/pickOwnership';
 import { formatTimestamp } from '../lib/time';
 
 interface Props {
@@ -38,6 +38,20 @@ function WarningsPanel({ warnings }: { warnings: TradeRowWarning[] }) {
   );
 }
 
+// same text as formatOwnedPick, just with the "(via X)" part in its own span
+function OwnedPickLabel({ pick }: { pick: OwnedPick }) {
+  const label = `${ordinal(pick.round)} rounder`;
+  if (pick.isOwn) {
+    return <>{label}</>;
+  }
+  return (
+    <>
+      {label}
+      <span className="pick-via"> (via {pick.originalTeam})</span>
+    </>
+  );
+}
+
 function TeamCard({ ownership }: { ownership: TeamPickOwnership }) {
   const tradedAwayText = ownership.tradedAway.map(formatTradedAwayPick).join(', ');
 
@@ -54,7 +68,7 @@ function TeamCard({ ownership }: { ownership: TeamPickOwnership }) {
         <ul className="pick-list">
           {ownership.owned.map(pick => (
             <li key={`${pick.round}-${pick.originalTeam}`}>
-              {formatOwnedPick(pick)}
+              <OwnedPickLabel pick={pick} />
               {pick.notes && <span className="pick-notes"> {pick.notes}</span>}
             </li>
           ))}
