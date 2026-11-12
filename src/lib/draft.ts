@@ -13,7 +13,7 @@ import type {
 // "Pittsburgh Steelers, PIT -DST" also matches (team-name-as-player for D/ST)
 //
 // A cell can also be a TRADE MARKER instead of a player: the exact text of
-// another team's row-1 name, in all caps (e.g. row 1 says "Guppy", the
+// another team's header-row name, in all caps (e.g. the header says "Guppy", the
 // marker is "GUPPY", optionally with a trailing colon like "GUPPY:"). That
 // means this pick — sitting in whichever column it's in — actually belongs
 // to the marked team, not the column's own team. teamNames is CONFIG.TEAMS,
@@ -96,7 +96,7 @@ export function colLetterToIndex(letter: string): number {
   return letter.toUpperCase().charCodeAt(0) - 65;
 }
 
-// Reads team names LIVE from the sheet's own header row (row 1) rather than
+// Reads team names LIVE from the sheet's own header row (first row of DRAFT_RANGE) rather than
 // from a hardcoded list — so a rename in the sheet (e.g. "Team 16" becoming
 // a real owner's name) shows up on refresh without a code change. Falls
 // back to a generic "Team N" placeholder for a column whose header cell is

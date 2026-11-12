@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { useAutopick } from './hooks/useAutopick';
 import { TopBar } from './components/TopBar';
 import { DraftStatusPanel } from './components/DraftStatusPanel';
@@ -6,13 +7,35 @@ import { OverridePanel } from './components/OverridePanel';
 import { TradeNotesPanel } from './components/TradeNotesPanel';
 import { AdpBoardPanel } from './components/AdpBoardPanel';
 import { RostersPanel } from './components/RostersPanel';
+import { PickOwnershipPanel } from './components/PickOwnershipPanel';
 import { WelcomeModal } from './components/WelcomeModal';
 import { hasSeenWelcome, markWelcomeSeen } from './lib/welcome';
-
-type Tab = 'draft' | 'rosters';
+import { CONFIG } from './config';
+import { TABS, tabFromPath } from './lib/routes';
+import type { Tab } from './lib/routes';
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('draft');
+  const [tab, setTab] = useState<Tab>(() => tabFromPath(window.location.pathname));
+
+  // keeps the back/forward buttons in sync with the tab
+  useEffect(() => {
+    function onPopState() {
+      setTab(tabFromPath(window.location.pathname));
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  function goToTab(e: MouseEvent<HTMLAnchorElement>, next: Tab, path: string) {
+    // let ctrl/cmd/shift-click open a new tab like a normal link
+    const isModifiedClick = e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0;
+    if (isModifiedClick) {
+      return;
+    }
+    e.preventDefault();
+    window.history.pushState(null, '', path);
+    setTab(next);
+  }
   // Lazy initializer so localStorage is only read once, on mount -- not on
   // every render.
   const [showWelcome, setShowWelcome] = useState(() => !hasSeenWelcome());
@@ -38,7 +61,7 @@ export default function App() {
 
   return (
     <div className={drafting ? 'is-drafting' : ''}>
-      {showWelcome && <WelcomeModal onDismiss={dismissWelcome} />}
+      {CONFIG.DRAFT_ACTIVE && showWelcome && <WelcomeModal onDismiss={dismissWelcome} />}
 
       {banner && (
         <div className="banner" role="status">
@@ -59,16 +82,29 @@ export default function App() {
       />
 
       <nav className="tab-nav">
-        <button className={`tab-btn${tab === 'draft' ? ' is-active' : ''}`} onClick={() => setTab('draft')}>
-          Draft
-        </button>
-        <button className={`tab-btn${tab === 'rosters' ? ' is-active' : ''}`} onClick={() => setTab('rosters')}>
-          Rosters
-        </button>
+        {TABS.map(t => (
+          <a
+            key={t.tab}
+            href={t.path}
+            className={tab === t.tab ? 'is-active' : ''}
+            aria-current={tab === t.tab ? 'page' : undefined}
+            onClick={e => goToTab(e, t.tab, t.path)}
+          >
+            {t.label}
+          </a>
+        ))}
       </nav>
 
-      {tab === 'draft' ? (
-        <main className="board">
+      {!CONFIG.DRAFT_ACTIVE && tab !== 'picks' && (
+        <main>
+          <section>
+            <p>Draft not active yet, in season.</p>
+          </section>
+        </main>
+      )}
+
+      {CONFIG.DRAFT_ACTIVE && tab === 'draft' && (
+        <main>
           <DraftStatusPanel
             teams={teams}
             onClock={onClock}
@@ -84,9 +120,17 @@ export default function App() {
 
           <AdpBoardPanel entries={adpBoard} />
         </main>
-      ) : (
-        <main className="board board-wide">
+      )}
+
+      {CONFIG.DRAFT_ACTIVE && tab === 'rosters' && (
+        <main>
           <RostersPanel rosters={rosters} />
+        </main>
+      )}
+
+      {tab === 'picks' && (
+        <main>
+          <PickOwnershipPanel teams={teams} />
         </main>
       )}
     </div>

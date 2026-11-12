@@ -12,28 +12,39 @@ import type { RosterSlotType } from './types';
  *   VITE_SPREADSHEET_ID=xxxxx
  */
 
+// the draft year everything keys off of. bump this once a year.
+export const DRAFT_YEAR = 2027;
+
 export const CONFIG = {
   // Falls back to process.env so config.ts can also be imported from plain
   // Node scripts (tests, validation scripts) outside of Vite.
   API_KEY: (import.meta.env?.VITE_SHEETS_API_KEY ?? '') as string,
   SPREADSHEET_ID: (import.meta.env?.VITE_SPREADSHEET_ID ?? '') as string,
 
+  DRAFT_YEAR,
+
+  // off during the season. the draft and rosters tabs just say the draft
+  // isn't active, and only the team names get read from the draft tab.
+  // flip to true once the rankings tab is ready for draft day.
+  DRAFT_ACTIVE: false,
+
   // --- Draft board tab --------------------------------------------
-  DRAFT_TAB: '2026 Draft',
-  // Row 1 = team names, rows 2-17 = rounds 1-16.
-  DRAFT_RANGE: 'A1:O17',
+  DRAFT_TAB: `${DRAFT_YEAR} Draft`,
+  // sheet row 1 is the "Paid?" row, so the range starts at row 2:
+  // row 2 = team names, rows 3-18 = rounds 1-16.
+  DRAFT_RANGE: 'A2:O18',
   // Free-text "traded picks" notes living in the same tab (see the
-  // "Traded Draft Picks" section, e.g. column S in past years). Column
+  // "Traded Draft Picks" section, column R in 2027, S in past years). Column
   // ownership in the grid is NOT reliable once trades happen — a pick
   // sitting in Brad's column may actually belong to Guppy, etc. These
   // notes get surfaced on-screen as a standing reminder to check before
   // trusting the auto-detected team.
-  TRADES_RANGE: 'S15:S40',
+  TRADES_RANGE: 'R15:R40',
   // Column letters (within DRAFT_RANGE) for each team, in the same
   // left-to-right order they're drafting in round 1.
   TEAM_COLUMNS: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'],
   TEAMS: [
-    'Alex W', 'JP', 'Josh C', 'Natalie P', 'Team 16', 'Colby L', 'Steven K',
+    'Leo L', 'JP', 'Josh C', 'Natalie P', 'Eli P', 'Colby L', 'Steven K',
     'Noah K', 'Eli C', 'Brad K', 'Saul M', 'Guppy', 'Ben N', 'Mitchell H'
   ],
   TOTAL_ROUNDS: 16,
@@ -42,7 +53,7 @@ export const CONFIG = {
   // --- Rankings tab -------------------------------------------------
   // Per-position ranked cheat sheets. You maintain this tab yourself;
   // the site just reads whatever's there, top to bottom = best to worst.
-  RANKINGS_TAB: '2026 Players Background Eqs',
+  RANKINGS_TAB: `${DRAFT_YEAR} Players Background Eqs`,
   RANKINGS_RANGE: 'P1:U1000',
   RANKINGS_START_COL: 'P', // first column letter in RANKINGS_RANGE
   RANKINGS_COLUMNS: {
@@ -53,6 +64,13 @@ export const CONFIG = {
     K: 'T',
     DST: 'U'
   } as Record<string, string>,
+
+  // --- Pick ownership (Trades tab) ---------------------------------
+  // one row per pick moving: Year | Round | Original Team | New Owner | Notes.
+  // future-year dynasty trades go in this same tab, Year column says which draft.
+  TRADE_LOG_TAB: `${DRAFT_YEAR} Trades`,
+  TRADE_LOG_RANGE: 'A1:E2000',
+  TRADE_LOG_POLL_INTERVAL_MS: 60 * 1000,
 
   // --- Roster construction ------------------------------------------
   ROSTER_SLOTS: [

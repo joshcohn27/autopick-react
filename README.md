@@ -15,6 +15,8 @@ Live site: https://autopick.joshbcohn.com
   actually owns a pick
 - **An ADP board** of available players, filterable by name/position
 - **Every team's roster**, split into starters and bench
+- **Pick ownership**: who owns which picks, built from a "<year> Trades" tab log
+  on top of everyone owning their own (see [SETUP.md](SETUP.md#pick-ownership-trades-tab))
 
 See [SETUP.md](SETUP.md) for connecting it to your own Google Sheet
 (API key, spreadsheet ID, sheet layout).
@@ -48,7 +50,7 @@ npm run dev
 
 ```
 src/
-  config.ts                 tabs, columns, roster slots, team list -- edit this
+  config.ts                 draft year, tabs, columns, roster slots, team list -- edit this
   types.ts                   shared types
   lib/
     draft.ts                  parsing + slot-assignment + suggestion logic (pure functions)
@@ -56,12 +58,17 @@ src/
     roster.test.ts            vitest suite for buildTeamRoster specifically
     adp.ts                     ADP lookup + full board (pure functions)
     adp.test.ts                vitest suite covering it
+    pickOwnership.ts           default pick ownership + applying Trades tab rows (pure functions)
+    pickOwnership.test.ts      vitest suite covering it
+    time.ts                    shared "last updated" timestamp formatting
     sheets.ts                  Google Sheets API fetch
     welcome.ts                  localStorage read/write for the one-time welcome modal
+    routes.ts                  tab <-> URL path mapping (/, /rosters, /picks)
   data/
     adp-data.ts                the ADP dataset itself (see its header comment for provenance)
   hooks/
     useAutopick.ts             polling / auto-off / state orchestration
+    useTradeLog.ts             Trades tab fetch, refetched every 60s while the tab is open
   components/
     WelcomeModal.tsx            one-time "flip the toggle on" popup (first visit only)
     TopBar.tsx                 status line + drafting toggle + manual pull
@@ -70,8 +77,30 @@ src/
     OverridePanel.tsx          manual "pick was traded" team override
     AdpBoardPanel.tsx          searchable/filterable ADP board
     RostersPanel.tsx           every team's starters + bench
+    PickOwnershipPanel.tsx     per-team pick ownership cards + year selector
   App.tsx
+vercel.json                  sends every path to index.html so /picks etc. load directly
 ```
+
+## Pages
+
+| Path | Tab |
+|---|---|
+| `/` | Draft |
+| `/rosters` | Rosters |
+| `/picks` | Pick Ownership |
+
+There's no router library: `App.tsx` reads the path on load and uses
+`history.pushState` when you click a tab. `vercel.json` rewrites every path
+to `index.html` so a direct visit or refresh on `/picks` doesn't 404.
+
+## Off-season mode
+
+`DRAFT_ACTIVE` in `src/config.ts` is `false` during the season. The Draft
+and Rosters tabs just say the draft isn't active, the Pull once / Drafting
+controls are hidden, and only the team names are read from the draft tab
+(the rankings tab isn't touched). Pick Ownership works either way. Flip it
+to `true` once the year's rankings tab is ready.
 
 ## How it behaves live
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CONFIG } from '../config';
-import { fetchSheetData } from '../lib/sheets';
+import { fetchDraftHeaderRow, fetchSheetData } from '../lib/sheets';
 import {
   parseDraftGrid, parseRankings, parseTeamNames, gridSignature,
   analyzeGrid, computeSuggestion, parseTradeNotes, draftedNameSet, buildTeamRoster
@@ -92,6 +92,14 @@ export function useAutopick() {
 
   // Initial load on mount, regardless of the toggle.
   useEffect(() => {
+    if (!CONFIG.DRAFT_ACTIVE) {
+      // off-season: only grab team names, and if that fails the
+      // CONFIG.TEAMS fallback is already in state
+      fetchDraftHeaderRow()
+        .then(headerRow => setTeams(parseTeamNames(headerRow)))
+        .catch(() => undefined);
+      return;
+    }
     refreshOnce();
     return () => stopPolling();
     // eslint-disable-next-line react-hooks/exhaustive-deps

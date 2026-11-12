@@ -13,14 +13,7 @@ interface Props {
   suggestion: Suggestion | null;
 }
 
-// Merges what used to be two separate bordered cards (ClockPanel and
-// SuggestionPanel) into one -- the "autopick would be" side used to nest a
-// further bordered/left-accent sub-card around the primary pick, plus a
-// hairline divider between each backup row. All of that inner boxing is
-// gone; hierarchy now comes from typography and spacing (see index.css's
-// .draft-status-panel/.clock-block/.rec-row/.backups rules), not extra
-// borders. Every conditional branch from both original components is
-// preserved as-is, just laid out flatter.
+// who's on the clock plus what autopick would draft for them, in one card
 export function DraftStatusPanel({ teams, onClock, activeTeamIndex, overrideActive, draftComplete, suggestion }: Props) {
   return (
     <section className="draft-status-panel">

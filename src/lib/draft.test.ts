@@ -15,10 +15,10 @@ describe('parseTeamNames', () => {
 
   it('reflects a rename in the sheet without any code change', () => {
     const header = ['Round', ...CONFIG.TEAMS];
-    const idx = CONFIG.TEAMS.indexOf('Team 16');
-    header[idx + 1] = 'Eli P';
+    const idx = CONFIG.TEAMS.indexOf('Eli P');
+    header[idx + 1] = 'Eli Pincus';
     const names = parseTeamNames(header);
-    expect(names[idx]).toBe('Eli P');
+    expect(names[idx]).toBe('Eli Pincus');
   });
 
   it('falls back to a generic placeholder for a blank header cell instead of crashing', () => {

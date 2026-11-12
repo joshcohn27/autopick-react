@@ -6,7 +6,7 @@ export interface DraftCell {
   position: Position;
   raw: string;
   // Present only when this cell is a trade marker (the exact text of
-  // another team's row-1 name, all-caps) rather than a player -- the index
+  // another team's header-row name, all-caps) rather than a player -- the index
   // into TEAM_COLUMNS/teamNames of the team this pick actually belongs to.
   tradeMarkerTeamIndex?: number;
 }
