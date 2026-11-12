@@ -1,6 +1,8 @@
 // autopick: writes trade markers like "BRAD K: " into the draft board from
 // the trades tab. paste into the sheet via extensions > apps script.
 // it only ever writes plain values into the board cells (B3:O18), nothing else.
+// run it from the sheet (autopick > fill traded picks) or pick fillTradedPicks
+// next to the run button in the editor. it's first in the file so it's the default.
 
 const DRAFT_YEAR = 2027;
 const DRAFT_TAB = DRAFT_YEAR + ' Draft';
@@ -11,121 +13,6 @@ const FIRST_ROUND_ROW = 3;
 const TOTAL_ROUNDS = 16;
 const FIRST_TEAM_COLUMN = 2;
 const TEAM_COUNT = 14;
-
-function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Autopick')
-    .addItem('Fill traded picks', 'fillTradedPicks')
-    .addToUi();
-}
-
-function normalizeName(name) {
-  return String(name).trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function columnLetter(column) {
-  return String.fromCharCode(64 + column);
-}
-
-function markerFor(teamName) {
-  return teamName.toUpperCase() + ': ';
-}
-
-// the team index named before the colon, or -1. works on "GUPPY: " and "GUPPY: Davante Adams, LAR -WR"
-function markerTeam(text, teamIndexByName) {
-  const colonIndex = text.indexOf(':');
-  if (colonIndex === -1) {
-    return -1;
-  }
-  const prefix = normalizeName(text.slice(0, colonIndex));
-  if (prefix in teamIndexByName) {
-    return teamIndexByName[prefix];
-  }
-  return -1;
-}
-
-// an all-caps team name, a colon, and nothing else
-function isMarkerOnly(text, teamIndexByName) {
-  const colonIndex = text.indexOf(':');
-  if (colonIndex === -1) {
-    return false;
-  }
-  const prefix = text.slice(0, colonIndex).trim();
-  const rest = text.slice(colonIndex + 1).trim();
-  if (rest !== '') {
-    return false;
-  }
-  if (prefix !== prefix.toUpperCase()) {
-    return false;
-  }
-  return markerTeam(text, teamIndexByName) !== -1;
-}
-
-function isWholeNumber(text) {
-  return /^\d+$/.test(text);
-}
-
-// owners[round - 1][column] = team index that owns the pick now
-function readOwners(trades, teamNames, teamIndexByName, badRows) {
-  const owners = [];
-  for (let r = 0; r < TOTAL_ROUNDS; r++) {
-    owners.push(teamNames.map((name, i) => i));
-  }
-
-  // row 1 is headers. rows go top to bottom, so the lowest row wins.
-  for (let i = 1; i < trades.length; i++) {
-    const row = trades[i].map(cell => String(cell).trim());
-    const year = row[0] || '';
-    const round = row[1] || '';
-    const original = row[2] || '';
-    const newOwner = row[3] || '';
-
-    const isBlank = row.every(cell => cell === '');
-    if (isBlank) {
-      continue;
-    }
-
-    const problems = [];
-    if (!isWholeNumber(year)) {
-      problems.push('bad year "' + year + '"');
-    }
-    const roundNumber = Number(round);
-    const roundOk = isWholeNumber(round) && roundNumber >= 1 && roundNumber <= TOTAL_ROUNDS;
-    if (!roundOk) {
-      problems.push('bad round "' + round + '"');
-    }
-    if (!(normalizeName(original) in teamIndexByName)) {
-      problems.push('unknown original team "' + original + '"');
-    }
-    if (!(normalizeName(newOwner) in teamIndexByName)) {
-      problems.push('unknown new owner "' + newOwner + '"');
-    }
-
-    if (problems.length > 0) {
-      badRows.push('Row ' + (i + 1) + ': ' + problems.join(', '));
-      continue;
-    }
-    if (Number(year) !== DRAFT_YEAR) {
-      continue;
-    }
-
-    const column = teamIndexByName[normalizeName(original)];
-    owners[roundNumber - 1][column] = teamIndexByName[normalizeName(newOwner)];
-  }
-  return owners;
-}
-
-// popup when run from the sheet's menu. run from the editor there's no popup,
-// so the same text goes to the execution log instead.
-function showResult(text) {
-  console.log(text);
-  try {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('Fill traded picks', text, ui.ButtonSet.OK);
-  } catch (err) {
-    console.log('(no popup when run from the editor, see the log above)');
-  }
-}
 
 function fillTradedPicks() {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -233,4 +120,119 @@ function fillTradedPicks() {
     lines.push('', 'No "' + TRADES_TAB + '" tab found, so nothing counts as traded.');
   }
   showResult(lines.join('\n'));
+}
+
+// popup when run from the sheet's menu. run from the editor there's no popup,
+// so the same text goes to the execution log instead.
+function showResult(text) {
+  console.log(text);
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('Fill traded picks', text, ui.ButtonSet.OK);
+  } catch (err) {
+    console.log('(no popup when run from the editor, see the log above)');
+  }
+}
+
+function normalizeName(name) {
+  return String(name).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function columnLetter(column) {
+  return String.fromCharCode(64 + column);
+}
+
+function markerFor(teamName) {
+  return teamName.toUpperCase() + ': ';
+}
+
+// the team index named before the colon, or -1. works on "GUPPY: " and "GUPPY: Davante Adams, LAR -WR"
+function markerTeam(text, teamIndexByName) {
+  const colonIndex = text.indexOf(':');
+  if (colonIndex === -1) {
+    return -1;
+  }
+  const prefix = normalizeName(text.slice(0, colonIndex));
+  if (prefix in teamIndexByName) {
+    return teamIndexByName[prefix];
+  }
+  return -1;
+}
+
+// an all-caps team name, a colon, and nothing else
+function isMarkerOnly(text, teamIndexByName) {
+  const colonIndex = text.indexOf(':');
+  if (colonIndex === -1) {
+    return false;
+  }
+  const prefix = text.slice(0, colonIndex).trim();
+  const rest = text.slice(colonIndex + 1).trim();
+  if (rest !== '') {
+    return false;
+  }
+  if (prefix !== prefix.toUpperCase()) {
+    return false;
+  }
+  return markerTeam(text, teamIndexByName) !== -1;
+}
+
+function isWholeNumber(text) {
+  return /^\d+$/.test(text);
+}
+
+// owners[round - 1][column] = team index that owns the pick now
+function readOwners(trades, teamNames, teamIndexByName, badRows) {
+  const owners = [];
+  for (let r = 0; r < TOTAL_ROUNDS; r++) {
+    owners.push(teamNames.map((name, i) => i));
+  }
+
+  // row 1 is headers. rows go top to bottom, so the lowest row wins.
+  for (let i = 1; i < trades.length; i++) {
+    const row = trades[i].map(cell => String(cell).trim());
+    const year = row[0] || '';
+    const round = row[1] || '';
+    const original = row[2] || '';
+    const newOwner = row[3] || '';
+
+    const isBlank = row.every(cell => cell === '');
+    if (isBlank) {
+      continue;
+    }
+
+    const problems = [];
+    if (!isWholeNumber(year)) {
+      problems.push('bad year "' + year + '"');
+    }
+    const roundNumber = Number(round);
+    const roundOk = isWholeNumber(round) && roundNumber >= 1 && roundNumber <= TOTAL_ROUNDS;
+    if (!roundOk) {
+      problems.push('bad round "' + round + '"');
+    }
+    if (!(normalizeName(original) in teamIndexByName)) {
+      problems.push('unknown original team "' + original + '"');
+    }
+    if (!(normalizeName(newOwner) in teamIndexByName)) {
+      problems.push('unknown new owner "' + newOwner + '"');
+    }
+
+    if (problems.length > 0) {
+      badRows.push('Row ' + (i + 1) + ': ' + problems.join(', '));
+      continue;
+    }
+    if (Number(year) !== DRAFT_YEAR) {
+      continue;
+    }
+
+    const column = teamIndexByName[normalizeName(original)];
+    owners[roundNumber - 1][column] = teamIndexByName[normalizeName(newOwner)];
+  }
+  return owners;
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Autopick')
+    .addItem('Fill traded picks', 'fillTradedPicks')
+    .addToUi();
 }
