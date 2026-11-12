@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { lookupAdp, computeAdpBoard } from './adp';
 import { ADP_DATA } from '../data/adp-data';
+import { parseDraftCell } from './draft';
 
 // The floor K/DST are placed at, per adp-data.ts's own header comment:
 // (12-1) * team_count + 1, currently 155 for a 14-team league.
@@ -87,5 +88,15 @@ describe('ADP_DATA integrity', () => {
   it('caps QB at exactly the 32 real Week 1 starters', () => {
     const qbCount = Object.values(ADP_DATA).filter(e => e.position === 'QB').length;
     expect(qbCount).toBe(32);
+  });
+});
+
+describe('computeAdpBoard with drafted defenses', () => {
+  it('drops a defense drafted as "Houston Texans -DST" from the board', () => {
+    const cell = parseDraftCell('Houston Texans -DST');
+    const drafted = new Set([String(cell?.player).toLowerCase()]);
+    const board = computeAdpBoard(drafted);
+    expect(board.some(e => e.player === 'Houston Texans')).toBe(false);
+    expect(board.some(e => e.player === 'Denver Broncos')).toBe(true);
   });
 });

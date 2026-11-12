@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { lookupAdp } from './adp';
+import { DEFENSE_LABEL_SOURCE, canonicalDefenseName, findDefense, isDefenseLabel } from '../data/defenses';
 import type {
   DraftCell, Pick, OnClock, RankingEntry, RankingsByPosition,
   SlotInstance, Suggestion, SuggestionCandidate, Position, RosterSlotView
@@ -20,6 +21,39 @@ import type {
 // passed in so this stays a pure function.
 const PLAYER_CELL_PATTERN = /^(.*),\s*([A-Za-z]{2,4})\s*-\s*([A-Za-z]+)\s*$/;
 
+// defenses are often written without the ", TEAM" part: "Houston Texans -DST".
+// the label itself is loose (D/ST, DEF, etc), see defenses.ts.
+const DEFENSE_CELL_PATTERN = new RegExp(
+  String.raw`^(.+?)(?:,\s*[A-Za-z]{2,4})?(?:\s*[-–—]\s*|\s*\(\s*|\s+)(?:${DEFENSE_LABEL_SOURCE})\s*\)?\s*$`,
+  'i'
+);
+
+type ParsedPick = { player: string; nflTeam: string | null; position: Position };
+
+function parsePickText(text: string): ParsedPick | null {
+  const m = text.match(PLAYER_CELL_PATTERN);
+  if (m) {
+    let position = m[3].trim().toUpperCase() as Position;
+    let player = m[1].trim();
+    if (isDefenseLabel(position)) {
+      position = 'DST';
+      player = canonicalDefenseName(player);
+    }
+    return { player, nflTeam: m[2].trim().toUpperCase(), position };
+  }
+
+  const d = text.match(DEFENSE_CELL_PATTERN);
+  if (d) {
+    const defense = findDefense(d[1]);
+    if (defense) {
+      return { player: defense.name, nflTeam: defense.abbr, position: 'DST' };
+    }
+    return { player: d[1].trim(), nflTeam: null, position: 'DST' };
+  }
+
+  return null;
+}
+
 export function parseDraftCell(raw: unknown, teamNames: string[] = []): DraftCell | null {
   const text = String(raw ?? '').trim();
   if (!text) return null;
@@ -38,17 +72,11 @@ export function parseDraftCell(raw: unknown, teamNames: string[] = []): DraftCel
     const remainder = text.slice(colonIdx + 1).trim();
     const prefixIdx = teamNames.findIndex(t => t.toLowerCase() === prefix.toLowerCase());
     if (prefixIdx !== -1) {
-      const remainderMatch = remainder.match(PLAYER_CELL_PATTERN);
-      if (remainderMatch) {
+      const remainderPick = parsePickText(remainder);
+      if (remainderPick) {
         // The main case this handles: a marker prefix followed by a real
         // pick. Extract just the player -- don't keep the "TEAM: " text.
-        return {
-          player: remainderMatch[1].trim(),
-          nflTeam: remainderMatch[2].trim().toUpperCase(),
-          position: remainderMatch[3].trim().toUpperCase() as Position,
-          raw: text,
-          tradeMarkerTeamIndex: prefixIdx
-        };
+        return { ...remainderPick, raw: text, tradeMarkerTeamIndex: prefixIdx };
       }
       // A bare marker ("GUPPY:" with nothing after it) or a remainder that
       // doesn't parse as a player. Keep the team attribution either way --
@@ -57,17 +85,12 @@ export function parseDraftCell(raw: unknown, teamNames: string[] = []): DraftCel
     }
   }
 
-  const m = text.match(PLAYER_CELL_PATTERN);
-  if (m) {
-    return {
-      player: m[1].trim(),
-      nflTeam: m[2].trim().toUpperCase(),
-      position: m[3].trim().toUpperCase() as Position,
-      raw: text
-    };
+  const pick = parsePickText(text);
+  if (pick) {
+    return { ...pick, raw: text };
   }
 
-  // Not a "Player, TEAM -POS" cell, and no colon-prefixed marker matched
+  // Not a "Player, TEAM -POS" or "Team Name -DST" cell, and no colon-prefixed marker matched
   // above. Fall back to the older convention: the WHOLE cleaned cell
   // (trailing colon stripped) matching a team name exactly, e.g. a no-colon
   // "brad k".
@@ -132,7 +155,12 @@ export function parseRankings(values: unknown[][]): RankingsByPosition {
     for (let r = 1; r < values.length; r++) {
       const row = values[r] || [];
       const parsed = parseRankingCell(row[colIdx]);
-      if (parsed) list.push({ rank: list.length + 1, position: pos as Position, ...parsed });
+      if (parsed) {
+        if (pos === 'DST') {
+          parsed.player = canonicalDefenseName(parsed.player);
+        }
+        list.push({ rank: list.length + 1, position: pos as Position, ...parsed });
+      }
     }
     byPos[pos] = list;
   }
@@ -224,13 +252,6 @@ function summarizeSlots(openSlots: SlotInstance[]): Record<string, number> {
 // 1-4), looser mid-draft (5-10), off entirely late (11-16, null = no cap)
 // -- by then bench/depth picks are inherently unpredictable and shouldn't
 // be second-guessed by ADP.
-// K/DST are structurally priority-1 slots (see CONFIG.ROSTER_SLOTS) so they
-// become eligible targets from round 1 like any other dedicated slot -- but
-// nobody actually drafts a kicker or defense that early in this league.
-// Autopick must never suggest either position before this round, no matter
-// what else is going on (open slots, ADP, reach guardrails, etc).
-const KICKER_DEFENSE_MIN_ROUND = 14;
-
 function maxAllowedGap(round: number): number | null {
   if (round <= 4) return 10;
   if (round <= 10) return 20;
@@ -320,17 +341,120 @@ export function narrowBenchPositions(positionsToCheck: string[], benchCounts: Re
   return underMax.length > 0 ? underMax : positionsToCheck;
 }
 
+// ---------------------------------------------------------------
+// late rounds: k/dst and bench preferences
+// ---------------------------------------------------------------
+
+const BENCH_PRIORITY = 3;
+
+function isKickerOrDefenseSlot(slot: SlotInstance): boolean {
+  return slot.name === 'K' || slot.name === 'DST';
+}
+
+// whether an open k or dst slot can show up as an option this round
+function kickerDefenseAllowed(slotName: string, round: number, openSlots: SlotInstance[]): boolean {
+  const rules = CONFIG.LATE_ROUND_RULES;
+  if (slotName === 'DST') {
+    return round >= rules.DST_ALLOWED_ROUND;
+  }
+
+  // k waits until the team has its dst
+  const dstStillOpen = openSlots.some(s => s.name === 'DST');
+  if (dstStillOpen) {
+    return false;
+  }
+  return round >= rules.K_ALLOWED_ROUND;
+}
+
+function heldBackUntilRound(kickerDefenseSlots: SlotInstance[]): number {
+  const dstOpen = kickerDefenseSlots.some(s => s.name === 'DST');
+  if (dstOpen) {
+    return CONFIG.LATE_ROUND_RULES.DST_ALLOWED_ROUND;
+  }
+  return CONFIG.LATE_ROUND_RULES.K_ALLOWED_ROUND;
+}
+
+// soft preferences for bench-level picks: 0 = preferred, 1 = neutral,
+// 2 = ranked lower. a lower tier always wins, adp breaks ties inside a tier.
+export function benchTier(position: string, round: number): number {
+  const rules = CONFIG.LATE_ROUND_RULES;
+
+  if (position === 'DST') {
+    if (round >= rules.DST_RECOMMENDED_ROUND) {
+      return 0;
+    }
+    return 2;
+  }
+
+  if (position === 'K') {
+    if (round >= rules.K_RECOMMENDED_ROUND) {
+      return 0;
+    }
+    return 2;
+  }
+
+  const isQbOrTe = position === 'QB' || position === 'TE';
+  if (isQbOrTe && round >= rules.UPSIDE_ROUND) {
+    return 2;
+  }
+  if (position === 'QB' && round < rules.BACKUP_QB_ROUND) {
+    return 2;
+  }
+  if (position === 'TE' && round < rules.BACKUP_TE_ROUND) {
+    return 2;
+  }
+  return 1;
+}
+
+function compareCandidates(a: SuggestionCandidate, b: SuggestionCandidate, isBenchPick: boolean, round: number): number {
+  if (isBenchPick) {
+    const tierDiff = benchTier(a.position, round) - benchTier(b.position, round);
+    if (tierDiff !== 0) {
+      return tierDiff;
+    }
+  }
+  return a.adp - b.adp;
+}
+
+function availableAt(rankings: RankingsByPosition, pos: string, drafted: Set<string>): RankingEntry[] {
+  const list = rankings[pos] || [];
+  return list.filter(p => !drafted.has(p.player.toLowerCase().trim()));
+}
+
+// the team is out of spare picks, so its open k/dst slots get filled now, dst first
+function forcedKickerDefense(
+  kickerDefenseSlots: SlotInstance[],
+  rankings: RankingsByPosition,
+  drafted: Set<string>,
+  openSlotSummary: Record<string, number>
+): Suggestion {
+  const order = ['DST', 'K'].filter(pos => kickerDefenseSlots.some(s => s.name === pos));
+
+  const candidates: SuggestionCandidate[] = [];
+  for (const pos of order) {
+    const list = availableAt(rankings, pos, drafted);
+    if (list.length > 0) {
+      const total = (rankings[pos] || []).length;
+      candidates.push(buildSuggestionCandidate(pos, list[0], list, total, kickerDefenseSlots));
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { kind: 'noCandidates', openSlotSummary };
+  }
+
+  const [primary, ...others] = candidates;
+  return { kind: 'ok', openSlotSummary, multiPosition: false, primary, others, forcedByDeadline: true };
+}
+
 // Core: given a team index, work out what to suggest.
 //
 // Your own per-position rank lists always decide who's best AT a position —
 // that part never changes. ADP comes in two ways:
 //  1. Cross-position comparison, when more than one position is eligible for
 //     the open slot (an empty roster's very first pick, or FLEX/bench, where
-//     every dedicated slot is open at once): comparing "percentile within
-//     your own list" was arbitrary and could suggest a reach (e.g. a TE at
-//     pick 2 just because the TE list happened to be shorter). ADP is a
-//     real, external signal of when players actually go, so it replaces
-//     that comparison.
+//     every dedicated slot is open at once). On bench-level picks the
+//     late-round tiers (benchTier) come first and ADP breaks ties.
 //  2. The round-based anti-reach guardrail (maxAllowedGap/
 //     findCompliantCandidate above): even with a single eligible position,
 //     a player whose ADP sits far past the current pick is skipped in favor
@@ -338,12 +462,18 @@ export function narrowBenchPositions(positionsToCheck: string[], benchCounts: Re
 //     order still decides who's best, ADP here is a gate, not a re-sort.
 // Missing/unranked players fall back to a high ADP value so they never
 // win a comparison, and never count as "compliant," by default.
+//
+// K/DST compete at bench level (never ahead of a starter or FLEX) once their
+// allowed round arrives, and get forced once remainingPicks runs out.
+// remainingPicks counts the current pick; when it isn't passed, it assumes
+// one pick per round.
 export function computeSuggestion(
   teamIndex: number,
   picks: Pick[],
   rankings: RankingsByPosition,
   currentRound: number,
-  currentPickNumber: number
+  currentPickNumber: number,
+  remainingPicks?: number
 ): Suggestion {
   const teamPicks = picks.filter(p => p.teamIndex === teamIndex);
   const openSlots = computeOpenSlots(teamPicks);
@@ -352,48 +482,55 @@ export function computeSuggestion(
     return { kind: 'rosterFull' };
   }
 
-  // K/DST are structurally priority-1 (dedicated) slots, same as
-  // QB/RB/WR/TE -- so left in the pecking order as-is, their still-open
-  // slots would keep minPriority pinned at 1 and block FLEX/bench from ever
-  // becoming the target before round 14, even though those are exactly the
-  // slots a team should keep filling in the meantime. Drop K/DST's open
-  // slots from consideration entirely pre-round-14, so priority falls
-  // through to FLEX/bench like K/DST weren't part of the roster yet.
-  const consideredSlots = currentRound < KICKER_DEFENSE_MIN_ROUND
-    ? openSlots.filter(s => s.name !== 'DST' && s.name !== 'K')
-    : openSlots;
+  const drafted = draftedNameSet(picks);
+  const openSlotSummary = summarizeSlots(openSlots);
 
-  if (consideredSlots.length === 0) {
-    // Only K and/or DST slots remain open, and they're held back this
-    // early -- nothing to suggest yet, but the roster isn't actually full.
-    return { kind: 'kickerDefenseHeldBack', openSlotSummary: summarizeSlots(openSlots), minRound: KICKER_DEFENSE_MIN_ROUND };
+  let picksLeft = CONFIG.TOTAL_ROUNDS - teamPicks.length;
+  if (remainingPicks !== undefined) {
+    picksLeft = remainingPicks;
   }
 
-  const minPriority = Math.min(...consideredSlots.map(s => s.priority));
-  const targetSlots = consideredSlots.filter(s => s.priority === minPriority);
-  const eligiblePositions = new Set<string>();
-  targetSlots.forEach(s => s.eligible.forEach(p => eligiblePositions.add(p)));
+  const kickerDefenseSlots = openSlots.filter(isKickerOrDefenseSlot);
+  const deadlineHit = kickerDefenseSlots.length > 0 && picksLeft <= kickerDefenseSlots.length;
+  if (deadlineHit) {
+    return forcedKickerDefense(kickerDefenseSlots, rankings, drafted, openSlotSummary);
+  }
 
-  const drafted = draftedNameSet(picks);
+  const skillSlots = openSlots.filter(s => !isKickerOrDefenseSlot(s));
+  const allowedKickerDefense = kickerDefenseSlots.filter(s => kickerDefenseAllowed(s.name, currentRound, openSlots));
+
+  if (skillSlots.length === 0 && allowedKickerDefense.length === 0) {
+    return { kind: 'kickerDefenseHeldBack', openSlotSummary, minRound: heldBackUntilRound(kickerDefenseSlots) };
+  }
+
+  let minPriority = BENCH_PRIORITY;
+  if (skillSlots.length > 0) {
+    minPriority = Math.min(...skillSlots.map(s => s.priority));
+  }
+  const isBenchPick = minPriority === BENCH_PRIORITY;
+
+  const skillTargets = skillSlots.filter(s => s.priority === minPriority);
+  const eligiblePositions = new Set<string>();
+  skillTargets.forEach(s => s.eligible.forEach(p => eligiblePositions.add(p)));
+
   let positionsToCheck = eligiblePositions.has('ANY')
     ? Object.keys(CONFIG.RANKINGS_COLUMNS)
     : [...eligiblePositions];
+  let targetSlots = skillTargets;
 
-  // Bench slots specifically (priority 3, i.e. every dedicated + FLEX slot
-  // is already filled and only bench remains open): narrow further to
-  // positions still under their BENCH_TARGETS max. K/DST are already
-  // excluded structurally (BENCH.eligible doesn't list them at all) -- this
-  // only shapes the QB/RB/WR/TE split. Dedicated slots and FLEX are
-  // completely untouched by this.
-  if (minPriority === 3) {
-    positionsToCheck = narrowBenchPositions(positionsToCheck, benchCompositionByPosition(teamPicks));
+  // Bench slots specifically: narrow to positions still under their
+  // BENCH_TARGETS max, then let any allowed K/DST compete alongside them.
+  if (isBenchPick) {
+    const narrowed = narrowBenchPositions(positionsToCheck, benchCompositionByPosition(teamPicks));
+    positionsToCheck = [...narrowed, ...allowedKickerDefense.map(s => s.name)];
+    targetSlots = [...skillTargets, ...allowedKickerDefense];
   }
 
   const maxGap = maxAllowedGap(currentRound);
 
   const perPosition = positionsToCheck
     .map(pos => {
-      const list = (rankings[pos] || []).filter(p => !drafted.has(p.player.toLowerCase().trim()));
+      const list = availableAt(rankings, pos, drafted);
       if (list.length === 0) return null;
       const totalAtPosition = (rankings[pos] || []).length;
       const compliant = findCompliantCandidate(list, maxGap, currentPickNumber);
@@ -402,7 +539,7 @@ export function computeSuggestion(
     .filter((p): p is NonNullable<typeof p> => p !== null);
 
   if (perPosition.length === 0) {
-    return { kind: 'noCandidates', openSlotSummary: summarizeSlots(openSlots) };
+    return { kind: 'noCandidates', openSlotSummary };
   }
 
   let candidatesByPosition: SuggestionCandidate[];
@@ -426,27 +563,42 @@ export function computeSuggestion(
         buildSuggestionCandidate(p.pos, p.compliant!, p.list, p.totalAtPosition, targetSlots)
       );
     } else {
-      // Nobody anywhere satisfied the cap -- fall back to the ORIGINAL,
-      // unfiltered behavior (each position's own rank #1, cross-position
-      // ADP sort) exactly as before this guardrail existed, and flag it.
+      // Nobody anywhere satisfied the cap -- fall back to each position's
+      // own rank #1, and flag it.
       reachFlagged = true;
       candidatesByPosition = perPosition.map(p =>
         buildSuggestionCandidate(p.pos, p.list[0], p.list, p.totalAtPosition, targetSlots)
       );
     }
-    candidatesByPosition.sort((a, b) => a.adp - b.adp);
+    candidatesByPosition.sort((a, b) => compareCandidates(a, b, isBenchPick, currentRound));
   }
 
   const [primary, ...others] = candidatesByPosition;
 
   return {
     kind: 'ok',
-    openSlotSummary: summarizeSlots(openSlots),
+    openSlotSummary,
     multiPosition: positionsToCheck.length > 1,
     primary,
     others,
     ...(reachFlagged ? { reachFlagged: true } : {})
   };
+}
+
+// how many picks a team still has to make: the picks it owns (round +
+// original team's column) whose cell on the board is still blank
+export function countRemainingPicks(
+  grid: (DraftCell | null)[][],
+  ownedPicks: { round: number; teamIndex: number }[]
+): number {
+  let count = 0;
+  for (const pick of ownedPicks) {
+    const row = grid[pick.round - 1];
+    if (row && row[pick.teamIndex] === null) {
+      count++;
+    }
+  }
+  return count;
 }
 
 export function gridSignature(rounds: (DraftCell | null)[][]): string {

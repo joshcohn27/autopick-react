@@ -105,7 +105,7 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
     );
   }
 
-  const { primary, others, openSlotSummary, multiPosition, reachFlagged } = suggestion;
+  const { primary, others, openSlotSummary, multiPosition, reachFlagged, forcedByDeadline } = suggestion;
   const slotsLine = Object.entries(openSlotSummary).map(([n, c]) => `${n} ×${c}`).join(' · ');
   const backups = [
     ...primary.backups.map(b => ({ ...b, position: primary.position })),
@@ -135,7 +135,13 @@ function renderSuggestionBody(suggestion: Suggestion | null) {
       {multiPosition && (
         <div className="note">
           Multiple positions were eligible for this slot, so the top candidate at each was compared by
-          ADP instead of by depth within its own position's list. Runners-up below.
+          ADP (after the late-round preferences) instead of by depth within its own position's list. Runners-up below.
+        </div>
+      )}
+
+      {forcedByDeadline && (
+        <div className="note">
+          This team is out of spare picks, so its K/DST can't wait any longer.
         </div>
       )}
 

@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import {
   parseDraftCell, parseRankingCell, colLetterToIndex,
   parseDraftGrid, parseTeamNames, snakeOrderForRound, analyzeGrid, computeOpenSlots, parseTradeNotes,
-  computeSuggestion, narrowBenchPositions
+  computeSuggestion, narrowBenchPositions, countRemainingPicks
 } from './draft';
 import type { Pick, RankingsByPosition } from '../types';
 
@@ -46,6 +46,62 @@ describe('parseDraftCell', () => {
     expect(parseDraftCell('Pittsburgh Steelers, PIT -DST')).toEqual({
       player: 'Pittsburgh Steelers', nflTeam: 'PIT', position: 'DST', raw: 'Pittsburgh Steelers, PIT -DST'
     });
+  });
+
+  it('parses every real 2026 defense cell (no ", TEAM" part) as a DST', () => {
+    const cells: [string, string, string][] = [
+      ['Houston Texans -DST', 'Houston Texans', 'HOU'],
+      ['Denver Broncos -DST', 'Denver Broncos', 'DEN'],
+      ['Los Angeles Rams -DST', 'Los Angeles Rams', 'LAR'],
+      ['Seattle Seahawks -DST', 'Seattle Seahawks', 'SEA'],
+      ['New England Patriots -DST', 'New England Patriots', 'NE'],
+      ['Pittsburgh Steelers -DST', 'Pittsburgh Steelers', 'PIT'],
+      ['Philadelphia Eagles -DST', 'Philadelphia Eagles', 'PHI'],
+      ['Minnesota Vikings -DST', 'Minnesota Vikings', 'MIN'],
+      ['Baltimore Ravens -DST', 'Baltimore Ravens', 'BAL'],
+      ['Jacksonville Jaguars -DST', 'Jacksonville Jaguars', 'JAX'],
+      ['Los Angeles Chargers -DST', 'Los Angeles Chargers', 'LAC'],
+      ['Kansas City Chiefs -DST', 'Kansas City Chiefs', 'KC'],
+      ['Green Bay Packers -DST', 'Green Bay Packers', 'GB'],
+      ['Detroit Lions -DST', 'Detroit Lions', 'DET']
+    ];
+    for (const [raw, player, nflTeam] of cells) {
+      expect(parseDraftCell(raw)).toEqual({ player, nflTeam, position: 'DST', raw });
+    }
+  });
+
+  it('reads loose defense labels the same way', () => {
+    const variants = [
+      'Houston Texans - D/ST', 'Houston Texans -d/st', 'Houston Texans -D-ST', 'Houston Texans -D.S.T.',
+      'Houston Texans DST', 'Houston Texans (DST)', 'Houston Texans -DEF', 'Houston Texans Defense',
+      'Texans D/ST', 'HOU DST', 'Houston Texans, HOU -D/ST', 'Houston Texans, HOU -DEF'
+    ];
+    for (const raw of variants) {
+      const cell = parseDraftCell(raw);
+      expect(cell?.position, raw).toBe('DST');
+      expect(cell?.player, raw).toBe('Houston Texans');
+    }
+  });
+
+  it('still parses real 2026 kicker cells, including no space after the comma', () => {
+    expect(parseDraftCell('Brandon Aubrey,DAL -K')).toEqual({
+      player: 'Brandon Aubrey', nflTeam: 'DAL', position: 'K', raw: 'Brandon Aubrey,DAL -K'
+    });
+  });
+
+  it('reads a defense behind a trade marker', () => {
+    const teams = ['Brad K', 'Guppy'];
+    const cell = parseDraftCell('GUPPY: Houston Texans -DST', teams);
+    expect(cell).toMatchObject({ player: 'Houston Texans', position: 'DST', tradeMarkerTeamIndex: 1 });
+  });
+
+  it('a drafted defense fills that team\'s DST slot', () => {
+    const cell = parseDraftCell('Houston Texans -DST');
+    if (!cell) {
+      throw new Error('expected a cell');
+    }
+    const openSlots = computeOpenSlots([{ round: 13, teamIndex: 0, pickNumber: 1, cell }]);
+    expect(openSlots.some(s => s.name === 'DST')).toBe(false);
   });
 
   it('returns null for an empty cell', () => {
@@ -530,55 +586,192 @@ describe('computeSuggestion — bench composition targets', () => {
   });
 });
 
-describe('computeSuggestion — K/DST held back until round 14', () => {
-  // Every dedicated slot, FLEX, AND all 7 bench slots filled (2 bench RB,
-  // 3 bench WR, 1 bench TE, 1 bench QB) -- the only slots left open
-  // anywhere in the 16-slot roster are DST and K.
-  function teamPicksWithOnlyKAndDstOpen(): Pick[] {
-    return ([
-      'QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'RB',       // dedicated + FLEX (7)
-      'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'QB'        // bench (7): 3 RB, 3 WR, 1 TE, 1 QB
-    ] as const).map((pos, i) => ({
+describe('computeSuggestion — late-round K/DST and bench rules', () => {
+  type Pos = 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DST';
+
+  function picksFor(positions: Pos[]): Pick[] {
+    return positions.map((pos, i) => ({
       round: i + 1, teamIndex: 0, pickNumber: i + 1,
       cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
     }));
   }
 
-  it('round 13, K/DST are the only open slots: refuses to suggest either, even as a reach fallback', () => {
-    const rankings: RankingsByPosition = {
-      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
-      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
-    };
-    const suggestion = computeSuggestion(0, teamPicksWithOnlyKAndDstOpen(), rankings, 13, 999);
-    // Every other slot is genuinely filled and K/DST are held back this
-    // early -- distinct from noCandidates (nothing wrong with the data,
-    // it's a deliberate hold), and distinct from rosterFull (the roster
-    // genuinely isn't full yet).
+  // every starter + FLEX filled, K/DST and all 7 bench slots open
+  const STARTERS: Pos[] = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'RB'];
+  // every starter, FLEX and bench slot filled -- only K/DST open
+  const ALL_BUT_K_DST: Pos[] = [...STARTERS, 'RB', 'RB', 'WR', 'WR', 'WR', 'TE', 'QB'];
+
+  function entry(player: string, position: Pos) {
+    return { rank: 1, position, player, nflTeam: 'AAA' };
+  }
+
+  // real adp: Aubrey 155.0, Texans 155.4, Purdy 112.0, Ferguson 104.6, Gibbs 1.2.
+  // "Fake ..." names aren't in the adp data, so they sit at 999.
+  const KD: RankingsByPosition = {
+    K: [entry('Brandon Aubrey', 'K')],
+    DST: [entry('Houston Texans', 'DST')]
+  };
+
+  const RULES = CONFIG.LATE_ROUND_RULES;
+
+  it('holds K/DST back before the DST allowed round when they are the only open slots', () => {
+    const suggestion = computeSuggestion(0, picksFor(ALL_BUT_K_DST), KD, RULES.DST_ALLOWED_ROUND - 1, 999, 5);
     expect(suggestion.kind).toBe('kickerDefenseHeldBack');
     if (suggestion.kind === 'kickerDefenseHeldBack') {
-      expect(suggestion.minRound).toBe(14);
-      expect(Object.keys(suggestion.openSlotSummary).sort()).toEqual(['DST', 'K']);
+      expect(suggestion.minRound).toBe(RULES.DST_ALLOWED_ROUND);
     }
   });
 
-  it('round 14, same setup: K/DST become eligible again', () => {
-    const rankings: RankingsByPosition = {
-      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
-      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
-    };
-    const suggestion = computeSuggestion(0, teamPicksWithOnlyKAndDstOpen(), rankings, 14, 999);
+  it('suggests the DST, not the K, once the DST is allowed and the team has no DST yet', () => {
+    const suggestion = computeSuggestion(0, picksFor(ALL_BUT_K_DST), KD, RULES.K_RECOMMENDED_ROUND, 999, 5);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
-      expect(['K', 'DST']).toContain(suggestion.primary.position);
+      expect(suggestion.primary.position).toBe('DST');
+      expect(suggestion.others.every(c => c.position !== 'K')).toBe(true);
+      expect(suggestion.forcedByDeadline).toBeFalsy();
     }
   });
 
-  it('round 1, empty roster: K/DST are excluded from the cross-position comparison entirely, even though real ADP would favor them', () => {
-    const rankings: RankingsByPosition = {
-      RB: [{ rank: 1, position: 'RB', player: 'Some RB', nflTeam: 'AAA' }],
-      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
-      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
+  it('ranks an allowed-but-not-recommended DST below bench players, but still lists it', () => {
+    const rankings = { ...KD, RB: [entry('Fake Bench RB', 'RB')] };
+    const suggestion = computeSuggestion(0, picksFor(STARTERS), rankings, RULES.DST_ALLOWED_ROUND, 999, 9);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Fake Bench RB');
+      expect(suggestion.others.map(c => c.position)).toContain('DST');
+    }
+  });
+
+  it('prefers the DST over any bench player from the DST recommended round', () => {
+    const rankings = { ...KD, RB: [entry('Jahmyr Gibbs', 'RB')] };
+    const suggestion = computeSuggestion(0, picksFor(STARTERS), rankings, RULES.DST_RECOMMENDED_ROUND, 999, 9);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.position).toBe('DST');
+      expect(suggestion.primary.slotName).toBe('DST');
+    }
+  });
+
+  it('keeps the K out until the team has its DST', () => {
+    const rankings = { ...KD, RB: [entry('Fake Bench RB', 'RB')] };
+    const suggestion = computeSuggestion(0, picksFor(STARTERS), rankings, RULES.K_RECOMMENDED_ROUND, 999, 9);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      const shown = [suggestion.primary, ...suggestion.others];
+      expect(shown.every(c => c.position !== 'K')).toBe(true);
+    }
+  });
+
+  it('ranks the K below bench players before its recommended round, then prefers it', () => {
+    const withDst = picksFor([...STARTERS, 'DST']);
+    const rankings = { ...KD, RB: [entry('Fake Bench RB', 'RB')] };
+
+    const early = computeSuggestion(0, withDst, rankings, RULES.K_ALLOWED_ROUND, 999, 8);
+    expect(early.kind).toBe('ok');
+    if (early.kind === 'ok') {
+      expect(early.primary.player).toBe('Fake Bench RB');
+      expect(early.others.map(c => c.position)).toContain('K');
+    }
+
+    const recommended = computeSuggestion(0, withDst, rankings, RULES.K_RECOMMENDED_ROUND, 999, 8);
+    expect(recommended.kind).toBe('ok');
+    if (recommended.kind === 'ok') {
+      expect(recommended.primary.position).toBe('K');
+    }
+  });
+
+  it('never lets K/DST jump ahead of an open starter, even late', () => {
+    const noTe = picksFor(['QB', 'RB', 'RB', 'WR', 'WR', 'RB']);
+    const rankings = { ...KD, TE: [entry('Fake Starting TE', 'TE')] };
+    const suggestion = computeSuggestion(0, noTe, rankings, RULES.K_RECOMMENDED_ROUND, 999, 6);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.slotName).toBe('TE');
+      expect(suggestion.others).toEqual([]);
+    }
+  });
+
+  it('forces DST then K once remaining picks equal the open K/DST slots, even early', () => {
+    const rankings = { ...KD, RB: [entry('Jahmyr Gibbs', 'RB')] };
+    const suggestion = computeSuggestion(0, picksFor(STARTERS), rankings, 5, 999, 2);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.forcedByDeadline).toBe(true);
+      expect(suggestion.primary.position).toBe('DST');
+      expect(suggestion.others.map(c => c.position)).toEqual(['K']);
+    }
+  });
+
+  it('forces the K on the last pick once the DST is filled', () => {
+    const suggestion = computeSuggestion(0, picksFor([...STARTERS, 'DST']), KD, 16, 999, 1);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.forcedByDeadline).toBe(true);
+      expect(suggestion.primary.position).toBe('K');
+    }
+  });
+
+  it('falls back to one pick per round when remaining picks are not passed', () => {
+    // 14 picks made, K/DST open: 2 left for 2 slots, so the deadline kicks in
+    const suggestion = computeSuggestion(0, picksFor(ALL_BUT_K_DST), KD, 15, 999);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.forcedByDeadline).toBe(true);
+    }
+  });
+
+  it('ranks a backup QB lower before the backup QB round, but still suggests one if nothing else is there', () => {
+    const withQb = { QB: [entry('Brock Purdy', 'QB')], RB: [entry('Fake Bench RB', 'RB')] };
+    const early = computeSuggestion(0, picksFor(STARTERS), withQb, RULES.BACKUP_QB_ROUND - 1, 999, 9);
+    expect(early.kind).toBe('ok');
+    if (early.kind === 'ok') {
+      expect(early.primary.player).toBe('Fake Bench RB');
+    }
+
+    const onTime = computeSuggestion(0, picksFor(STARTERS), withQb, RULES.BACKUP_QB_ROUND, 999, 9);
+    expect(onTime.kind).toBe('ok');
+    if (onTime.kind === 'ok') {
+      expect(onTime.primary.player).toBe('Brock Purdy');
+    }
+
+    const onlyQb = computeSuggestion(0, picksFor(STARTERS), { QB: [entry('Brock Purdy', 'QB')] }, RULES.BACKUP_QB_ROUND - 1, 999, 9);
+    expect(onlyQb.kind).toBe('ok');
+    if (onlyQb.kind === 'ok') {
+      expect(onlyQb.primary.player).toBe('Brock Purdy');
+    }
+  });
+
+  it('ranks a backup TE lower before the backup TE round', () => {
+    const withTe = { TE: [entry('Jake Ferguson', 'TE')], WR: [entry('Fake Bench WR', 'WR')] };
+    const early = computeSuggestion(0, picksFor(STARTERS), withTe, RULES.BACKUP_TE_ROUND - 1, 999, 9);
+    expect(early.kind).toBe('ok');
+    if (early.kind === 'ok') {
+      expect(early.primary.player).toBe('Fake Bench WR');
+    }
+
+    const onTime = computeSuggestion(0, picksFor(STARTERS), withTe, RULES.BACKUP_TE_ROUND, 999, 9);
+    expect(onTime.kind).toBe('ok');
+    if (onTime.kind === 'ok') {
+      expect(onTime.primary.player).toBe('Jake Ferguson');
+    }
+  });
+
+  it('leans RB/WR over QB/TE in the upside round', () => {
+    const rankings = {
+      QB: [entry('Brock Purdy', 'QB')],
+      TE: [entry('Jake Ferguson', 'TE')],
+      WR: [entry('Fake Upside WR', 'WR')]
     };
+    const withKd = picksFor([...STARTERS, 'DST', 'K']);
+    const suggestion = computeSuggestion(0, withKd, rankings, RULES.UPSIDE_ROUND, 999, 1);
+    expect(suggestion.kind).toBe('ok');
+    if (suggestion.kind === 'ok') {
+      expect(suggestion.primary.player).toBe('Fake Upside WR');
+    }
+  });
+
+  it('round 1, empty roster: K/DST are excluded from the cross-position comparison entirely', () => {
+    const rankings = { ...KD, RB: [entry('Some RB', 'RB')] };
     const suggestion = computeSuggestion(0, [], rankings, 1, 1);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
@@ -587,23 +780,9 @@ describe('computeSuggestion — K/DST held back until round 14', () => {
     }
   });
 
-  // Regression coverage for the bug this rule introduced: K/DST are
-  // structurally priority-1 (dedicated) slots, same tier as QB/RB/WR/TE, so
-  // leaving their still-open slots in the priority calc would pin
-  // minPriority at 1 forever pre-round-14 and starve FLEX/bench of ever
-  // becoming the target -- Autopick would suggest nothing at all once every
-  // OTHER dedicated slot was filled, well before round 14.
-  it('round 5, only FLEX/K/DST open (every other dedicated slot filled): suggests FLEX instead of stalling on held-back K/DST', () => {
-    const teamPicks = (['QB', 'RB', 'RB', 'WR', 'WR', 'TE'] as const).map((pos, i) => ({
-      round: i + 1, teamIndex: 0, pickNumber: i + 1,
-      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
-    }));
-    const rankings: RankingsByPosition = {
-      RB: [{ rank: 1, position: 'RB', player: 'Flex RB', nflTeam: 'AAA' }],
-      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
-      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
-    };
-    const suggestion = computeSuggestion(0, teamPicks, rankings, 5, 50);
+  it('round 5, only FLEX/K/DST open: suggests FLEX instead of stalling on held-back K/DST', () => {
+    const rankings = { ...KD, RB: [entry('Flex RB', 'RB')] };
+    const suggestion = computeSuggestion(0, picksFor(['QB', 'RB', 'RB', 'WR', 'WR', 'TE']), rankings, 5, 50);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.primary.player).toBe('Flex RB');
@@ -611,22 +790,28 @@ describe('computeSuggestion — K/DST held back until round 14', () => {
     }
   });
 
-  it('round 5, every dedicated slot + FLEX filled, only bench/K/DST open: suggests a bench pick instead of stalling on held-back K/DST', () => {
-    const teamPicks = (['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'RB'] as const).map((pos, i) => ({
-      round: i + 1, teamIndex: 0, pickNumber: i + 1,
-      cell: { player: `${pos} Guy ${i}`, nflTeam: null, position: pos, raw: '' }
-    }));
-    const rankings: RankingsByPosition = {
-      WR: [{ rank: 1, position: 'WR', player: 'Bench WR', nflTeam: 'AAA' }],
-      K: [{ rank: 1, position: 'K', player: 'Amazing Kicker', nflTeam: 'AAA' }],
-      DST: [{ rank: 1, position: 'DST', player: 'Amazing Defense', nflTeam: 'AAA' }]
-    };
-    const suggestion = computeSuggestion(0, teamPicks, rankings, 5, 70);
+  it('round 5, only bench/K/DST open: suggests a bench pick instead of stalling on held-back K/DST', () => {
+    const rankings = { ...KD, WR: [entry('Bench WR', 'WR')] };
+    const suggestion = computeSuggestion(0, picksFor(STARTERS), rankings, 5, 70);
     expect(suggestion.kind).toBe('ok');
     if (suggestion.kind === 'ok') {
       expect(suggestion.primary.player).toBe('Bench WR');
       expect(suggestion.primary.slotName).toBe('BENCH');
     }
+  });
+});
+
+describe('countRemainingPicks', () => {
+  it('counts only owned picks whose cell is still blank', () => {
+    const filled = { player: 'Someone', nflTeam: null, position: 'RB' as const, raw: 'x' };
+    const grid = [
+      [filled, null],
+      [null, null],
+      [null, filled]
+    ];
+    // owns round 1 and 2 of column 0, plus round 3 of column 1 (already used)
+    const owned = [{ round: 1, teamIndex: 0 }, { round: 2, teamIndex: 0 }, { round: 3, teamIndex: 1 }];
+    expect(countRemainingPicks(grid, owned)).toBe(1);
   });
 });
 

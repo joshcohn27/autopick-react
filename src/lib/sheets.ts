@@ -31,13 +31,19 @@ export async function fetchDraftHeaderRow(): Promise<unknown[] | undefined> {
   return values[0];
 }
 
-export async function fetchSheetData(): Promise<{ draftValues: unknown[][]; rankingValues: unknown[][]; tradeValues: unknown[][] }> {
-  const [draftValues, rankingValues, tradeValues] = await Promise.all([
+export async function fetchSheetData(): Promise<{
+  draftValues: unknown[][];
+  rankingValues: unknown[][];
+  tradeValues: unknown[][];
+  tradeLogValues: unknown[][];
+}> {
+  const [draftValues, rankingValues, tradeValues, tradeLogValues] = await Promise.all([
     fetchRange(CONFIG.DRAFT_TAB, CONFIG.DRAFT_RANGE),
     fetchRange(CONFIG.RANKINGS_TAB, CONFIG.RANKINGS_RANGE),
-    fetchRange(CONFIG.DRAFT_TAB, CONFIG.TRADES_RANGE)
+    fetchRange(CONFIG.DRAFT_TAB, CONFIG.TRADES_RANGE),
+    fetchTradeLog()
   ]);
-  return { draftValues, rankingValues, tradeValues };
+  return { draftValues, rankingValues, tradeValues, tradeLogValues };
 }
 
 // a tab that doesn't exist yet comes back as a 400 "unable to parse range"

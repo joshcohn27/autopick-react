@@ -82,8 +82,8 @@ export interface SuggestionCandidate extends RankingEntry {
 export type Suggestion =
   | { kind: 'rosterFull' }
   | { kind: 'noCandidates'; openSlotSummary: Record<string, number> }
-  // Every remaining open slot is K and/or DST, but it's not yet round 14
-  // (see KICKER_DEFENSE_MIN_ROUND in draft.ts) -- distinct from
+  // Every remaining open slot is K and/or DST, but it's not yet their
+  // allowed round (CONFIG.LATE_ROUND_RULES) -- distinct from
   // 'noCandidates' because there's nothing wrong with the rankings data,
   // it's a deliberate policy hold, and the UI should say so plainly rather
   // than pointing someone at the rankings tab.
@@ -100,4 +100,6 @@ export type Suggestion =
       // Omitted/false when a compliant candidate was found (even if it
       // wasn't each position's own rank #1).
       reachFlagged?: boolean;
+      // the team has no spare picks left, so this k/dst pick is forced
+      forcedByDeadline?: boolean;
     };

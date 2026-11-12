@@ -3,8 +3,10 @@ import { CONFIG } from '../config';
 import { fetchDraftHeaderRow, fetchSheetData } from '../lib/sheets';
 import {
   parseDraftGrid, parseRankings, parseTeamNames, gridSignature,
-  analyzeGrid, computeSuggestion, parseTradeNotes, draftedNameSet, buildTeamRoster
+  analyzeGrid, computeSuggestion, parseTradeNotes, draftedNameSet, buildTeamRoster,
+  countRemainingPicks
 } from '../lib/draft';
+import { buildPickOwnership, parseTradeRows } from '../lib/pickOwnership';
 import { computeAdpBoard } from '../lib/adp';
 import type { AdpBoardEntry } from '../lib/adp';
 import type { DraftCell, OnClock, Pick, RankingsByPosition, Suggestion, TeamRoster } from '../types';
@@ -23,6 +25,7 @@ export function useAutopick() {
   const [grid, setGrid] = useState<(DraftCell | null)[][] | null>(null);
   const [rankings, setRankings] = useState<RankingsByPosition | null>(null);
   const [tradeNotes, setTradeNotes] = useState<string[]>([]);
+  const [tradeLogRows, setTradeLogRows] = useState<unknown[][]>([]);
 
   const pollHandle = useRef<number | null>(null);
   const lastSignature = useRef<string | null>(null);
@@ -35,7 +38,7 @@ export function useAutopick() {
   const refreshOnce = useCallback(async () => {
     setStatus('loading');
     try {
-      const { draftValues, rankingValues, tradeValues } = await fetchSheetData();
+      const { draftValues, rankingValues, tradeValues, tradeLogValues } = await fetchSheetData();
       // Team names come live from the sheet's own header row every fetch —
       // never hardcoded — so a rename in the sheet shows up automatically.
       const liveTeams = parseTeamNames(draftValues[0]);
@@ -46,6 +49,7 @@ export function useAutopick() {
       setGrid(rounds);
       setRankings(parsedRankings);
       setTradeNotes(parseTradeNotes(tradeValues));
+      setTradeLogRows(tradeLogValues);
       setLastFetchAt(Date.now());
       setStatus('ok');
       setErrorMessage(null);
@@ -127,7 +131,8 @@ export function useAutopick() {
     // meaningless pick number.
     const round = onClock ? onClock.round : 16;
     const pickNumber = onClock ? onClock.pickNumber : Infinity;
-    suggestion = computeSuggestion(activeTeamIndex, picks, rankings, round, pickNumber);
+    const remainingPicks = remainingPicksFor(activeTeamIndex, teams, grid, tradeLogRows);
+    suggestion = computeSuggestion(activeTeamIndex, picks, rankings, round, pickNumber, remainingPicks);
   }
 
   // Straight ADP board (not roster-aware) for reference, same as scrolling
@@ -168,4 +173,32 @@ export function useAutopick() {
     picks,
     rosters
   };
+}
+
+// picks this team still has to make this draft, from pick ownership (trades
+// tab on top of everyone owning their own) and which of those cells are
+// still blank. always at least 1, since the team is picking right now.
+function remainingPicksFor(
+  teamIndex: number,
+  teams: string[],
+  grid: (DraftCell | null)[][] | null,
+  tradeLogRows: unknown[][]
+): number | undefined {
+  if (!grid) {
+    return undefined;
+  }
+
+  const { trades } = parseTradeRows(tradeLogRows, teams, CONFIG.TOTAL_ROUNDS);
+  const ownership = buildPickOwnership(teams, CONFIG.TOTAL_ROUNDS, CONFIG.DRAFT_YEAR, trades);
+  const teamCard = ownership.find(card => card.team === teams[teamIndex]);
+  if (!teamCard) {
+    return undefined;
+  }
+
+  const ownedPicks = teamCard.owned.map(pick => ({
+    round: pick.round,
+    teamIndex: teams.indexOf(pick.originalTeam)
+  }));
+  const remaining = countRemainingPicks(grid, ownedPicks);
+  return Math.max(remaining, 1);
 }

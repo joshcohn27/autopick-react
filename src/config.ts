@@ -88,6 +88,23 @@ export const CONFIG = {
     { name: 'BENCH', eligible: ['QB', 'RB', 'WR', 'TE'], count: 7, priority: 3 }
   ] as RosterSlotType[],
 
+  // --- Late-round rules --------------------------------------------
+  // round numbers only, tune these after pasting fresh adp.
+  // "allowed" = can show up as an option, "recommended" = preferred over
+  // bench players. a team's last spare picks force k/dst no matter what.
+  LATE_ROUND_RULES: {
+    DST_ALLOWED_ROUND: 12,
+    DST_RECOMMENDED_ROUND: 13,
+    // k also waits until the team has its dst
+    K_ALLOWED_ROUND: 13,
+    K_RECOMMENDED_ROUND: 14,
+    // backup qbs/tes rank lower on the bench before these rounds
+    BACKUP_QB_ROUND: 11,
+    BACKUP_TE_ROUND: 14,
+    // from this round on, the bench leans rb/wr over qb/te
+    UPSIDE_ROUND: 16
+  },
+
   // --- Live behavior --------------------------------------------------
   POLL_INTERVAL_MS: 7000,
   AUTO_OFF_AFTER_MS: 10 * 60 * 1000

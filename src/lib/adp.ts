@@ -1,15 +1,24 @@
 import { ADP_DATA } from '../data/adp-data';
 import type { AdpEntry } from '../data/adp-data';
+import { canonicalDefenseName } from '../data/defenses';
 
 // Very high fallback so anyone missing from the ADP table (deep bench
 // players, K/DST, names that don't match exactly) sorts last in a
 // cross-position comparison rather than winning by default.
 const UNRANKED_FALLBACK = 999;
 
+// defenses get the sheet's naming style, so espn-style "Texans D/ST" still matches
+function boardName(name: string, entry: AdpEntry): string {
+  if (entry.position === 'DST') {
+    return canonicalDefenseName(name);
+  }
+  return name;
+}
+
 // Build a case-insensitive lookup once.
 const NORMALIZED: Record<string, AdpEntry> = {};
 for (const [name, entry] of Object.entries(ADP_DATA)) {
-  NORMALIZED[name.toLowerCase().trim()] = entry;
+  NORMALIZED[boardName(name, entry).toLowerCase().trim()] = entry;
 }
 
 export interface AdpLookup {
@@ -35,7 +44,7 @@ export interface AdpBoardEntry {
 // Doesn't know about your league's roster rules or slot needs at all —
 // this is just "who's gone, in what order, league-wide" for reference.
 const FULL_BOARD: AdpBoardEntry[] = Object.entries(ADP_DATA)
-  .map(([player, entry]) => ({ player, position: entry.position, nflTeam: entry.nflTeam, adp: entry.adp }))
+  .map(([player, entry]) => ({ player: boardName(player, entry), position: entry.position, nflTeam: entry.nflTeam, adp: entry.adp }))
   .sort((a, b) => a.adp - b.adp);
 
 // Available players by ADP, with anyone already drafted (by exact name
