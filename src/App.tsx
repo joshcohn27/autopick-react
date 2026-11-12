@@ -54,6 +54,7 @@ export default function App() {
     overrideTeam, setOverrideTeam,
     onClock, activeTeamIndex, viaTeamIndex, draftComplete,
     tradeLogError,
+    markerConflicts,
     suggestion,
     tradeNotes,
     adpBoard,
@@ -121,6 +122,20 @@ export default function App() {
               Couldn't load the {CONFIG.TRADE_LOG_TAB} tab, so traded picks aren't applied. Use the override below if a
               pick was traded.
             </div>
+          )}
+
+          {markerConflicts.length > 0 && (
+            <section className="trade-notes-panel">
+              <div className="eyebrow">Board markers that don't match the {CONFIG.TRADE_LOG_TAB} tab (using the Trades tab)</div>
+              <ul>
+                {markerConflicts.map(c => (
+                  <li key={c.address}>
+                    {c.address} ({teams[c.columnTeamIndex]}, round {c.round}) says {teams[c.markerTeamIndex]}, but the
+                    Trades tab says {teams[c.ownerTeamIndex]}
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
 
           <TradeNotesPanel notes={tradeNotes} />

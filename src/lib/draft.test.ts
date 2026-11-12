@@ -3,7 +3,8 @@ import { CONFIG } from '../config';
 import {
   parseDraftCell, parseRankingCell, colLetterToIndex,
   parseDraftGrid, parseTeamNames, snakeOrderForRound, analyzeGrid, computeOpenSlots, parseTradeNotes,
-  computeSuggestion, narrowBenchPositions, countRemainingPicks, resolveOnClockTeam
+  computeSuggestion, narrowBenchPositions, countRemainingPicks, resolveOnClockTeam,
+  parseMarkerGrid, findMarkerConflicts
 } from './draft';
 import type { Pick, RankingsByPosition } from '../types';
 
@@ -116,17 +117,38 @@ describe('parseDraftCell', () => {
     expect(result?.tradeMarkerTeamIndex).toBeUndefined();
   });
 
-  it('recognizes a trade marker matching a team name, case-insensitive, with a trailing colon', () => {
+  it('treats a marker-only cell as a pick not made yet, with or without the trailing space', () => {
     const teamNames = ['Josh C', 'Guppy', 'Brad K'];
-    const result = parseDraftCell('GUPPY:', teamNames);
-    expect(result?.tradeMarkerTeamIndex).toBe(1);
-    expect(result?.position).toBe('UNKNOWN');
+    expect(parseDraftCell('BRAD K: ', teamNames)).toBeNull();
+    expect(parseDraftCell('GUPPY:', teamNames)).toBeNull();
+    expect(parseDraftCell('brad k', teamNames)).toBeNull();
   });
 
-  it('recognizes a trade marker with no colon and mixed case', () => {
+  it('reads a marker plus DST', () => {
     const teamNames = ['Josh C', 'Guppy', 'Brad K'];
-    const result = parseDraftCell('brad k', teamNames);
-    expect(result?.tradeMarkerTeamIndex).toBe(2);
+    expect(parseDraftCell('BRAD K: Houston Texans -DST', teamNames)).toEqual({
+      player: 'Houston Texans', nflTeam: 'HOU', position: 'DST',
+      raw: 'BRAD K: Houston Texans -DST', tradeMarkerTeamIndex: 2
+    });
+  });
+
+  it('reads the real 2026 marker cells', () => {
+    const teams2026 = ['Leo L', 'JP', 'Josh C', 'Natalie P', 'Eli P', 'Colby L', 'Steven K', 'Noah K', 'Eli C', 'Brad K', 'Saul M', 'Guppy', 'Ben N', 'Mitchell H'];
+    expect(parseDraftCell('GUPPY: Davante Adams, LAR -WR', teams2026)).toEqual({
+      player: 'Davante Adams', nflTeam: 'LAR', position: 'WR',
+      raw: 'GUPPY: Davante Adams, LAR -WR', tradeMarkerTeamIndex: 11
+    });
+    expect(parseDraftCell('BRAD K: Brian Robinson Jr.,ATL -RB', teams2026)).toEqual({
+      player: 'Brian Robinson Jr.', nflTeam: 'ATL', position: 'RB',
+      raw: 'BRAD K: Brian Robinson Jr.,ATL -RB', tradeMarkerTeamIndex: 9
+    });
+  });
+
+  it('counts the punishment cell as a used pick for its own column', () => {
+    const teamNames = ['Mitchell H', 'Guppy'];
+    expect(parseDraftCell('NO PICK - Punishment ', teamNames)).toEqual({
+      player: 'NO PICK - Punishment', nflTeam: null, position: 'UNKNOWN', raw: 'NO PICK - Punishment'
+    });
   });
 
   it('does not treat a real player cell as a trade marker even if a team list is passed', () => {
@@ -172,14 +194,12 @@ describe('parseDraftCell', () => {
     });
   });
 
-  it('keeps team attribution for a bare marker prefix with nothing after it', () => {
-    // Real historical data in the sheet: a trade marker entered before the
-    // pick itself was known/entered. Must keep working.
+  it('keeps team attribution for a marker followed by something that is not a player', () => {
     const teamNames = ['Josh C', 'Guppy', 'Brad K'];
-    const result = parseDraftCell('GUPPY:', teamNames);
+    const result = parseDraftCell('GUPPY: Odell', teamNames);
     expect(result?.tradeMarkerTeamIndex).toBe(1);
     expect(result?.position).toBe('UNKNOWN');
-    expect(result?.player).toBe('GUPPY:');
+    expect(result?.player).toBe('GUPPY: Odell');
   });
 
   it('falls through to the freeform-note fallback when the colon prefix is not a team name', () => {
@@ -282,7 +302,7 @@ describe('analyzeGrid', () => {
     const guppyIdx = CONFIG.TEAMS.indexOf('Guppy');
 
     // A pick sits in Brad's column (round 3) but is marked as Guppy's.
-    values[3][bradIdx + 1] = 'GUPPY:';
+    values[3][bradIdx + 1] = 'GUPPY: Davante Adams, LAR -WR';
     // A normal pick for Guppy himself, elsewhere.
     values[5][guppyIdx + 1] = cell('Guppys Real Pick', 'XX', 'WR');
 
@@ -884,15 +904,52 @@ describe('who is on the clock with pick ownership', () => {
     expect(withoutOwnership.picks[0].teamIndex).toBe(0);
   });
 
-  it('still lets a trade marker typed in the cell win over the trades tab', () => {
+  it('uses the trades tab over a marker typed in the cell, and flags the cell', () => {
     const values: unknown[][] = [];
     values[0] = ['Round', ...CONFIG.TEAMS];
     for (let r = 1; r <= 16; r++) {
       values[r] = ['Round' + r, ...CONFIG.TEAMS.map(() => '')];
     }
+    // round 1, column B says team 6 owns it, the trades tab says team 3
     values[1][1] = `${CONFIG.TEAMS[6].toUpperCase()}: Josh Allen, BUF -QB`;
+    // round 2, column C is marker-only and agrees with the trades tab
+    values[2][2] = `${CONFIG.TEAMS[3].toUpperCase()}: `;
+    const ownerOf = (round: number, col: number) => {
+      if (round === 1 && col === 0) {
+        return 3;
+      }
+      if (round === 2 && col === 1) {
+        return 3;
+      }
+      return col;
+    };
+
     const grid = parseDraftGrid(values, CONFIG.TEAMS);
-    const { picks } = analyzeGrid(grid, () => 3);
-    expect(picks[0].teamIndex).toBe(6);
+    const { picks, onClock } = analyzeGrid(grid, ownerOf);
+    expect(picks[0].teamIndex).toBe(3);
+
+    // without the trades tab, the cell's own marker decides
+    expect(analyzeGrid(grid).picks[0].teamIndex).toBe(6);
+
+    // the marker-only cell is still an open pick
+    expect(picks).toHaveLength(1);
+    expect(onClock?.round).toBe(1);
+
+    const conflicts = findMarkerConflicts(parseMarkerGrid(values, CONFIG.TEAMS), ownerOf);
+    expect(conflicts).toEqual([
+      { address: 'B3', round: 1, columnTeamIndex: 0, markerTeamIndex: 6, ownerTeamIndex: 3 }
+    ]);
+  });
+
+  it('counts a marker-only cell as a pick still to make', () => {
+    const values: unknown[][] = [];
+    values[0] = ['Round', ...CONFIG.TEAMS];
+    for (let r = 1; r <= 16; r++) {
+      values[r] = ['Round' + r, ...CONFIG.TEAMS.map(() => '')];
+    }
+    values[3][1] = `${CONFIG.TEAMS[7].toUpperCase()}: `;
+    const grid = parseDraftGrid(values, CONFIG.TEAMS);
+    expect(grid[2][0]).toBeNull();
+    expect(countRemainingPicks(grid, [{ round: 3, teamIndex: 0 }])).toBe(1);
   });
 });

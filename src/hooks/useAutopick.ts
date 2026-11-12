@@ -4,8 +4,9 @@ import { fetchDraftHeaderRow, fetchSheetData } from '../lib/sheets';
 import {
   parseDraftGrid, parseRankings, parseTeamNames, gridSignature,
   analyzeGrid, computeSuggestion, parseTradeNotes, draftedNameSet, buildTeamRoster,
-  countRemainingPicks, resolveOnClockTeam
+  countRemainingPicks, resolveOnClockTeam, parseMarkerGrid, findMarkerConflicts
 } from '../lib/draft';
+import type { MarkerConflict } from '../lib/draft';
 import { buildPickOwnership, parseTradeRows, pickOwnerLookup } from '../lib/pickOwnership';
 import type { PickTrade } from '../lib/pickOwnership';
 import { computeAdpBoard } from '../lib/adp';
@@ -24,6 +25,7 @@ export function useAutopick() {
 
   const [teams, setTeams] = useState<string[]>(CONFIG.TEAMS);
   const [grid, setGrid] = useState<(DraftCell | null)[][] | null>(null);
+  const [markerGrid, setMarkerGrid] = useState<(number | null)[][]>([]);
   const [rankings, setRankings] = useState<RankingsByPosition | null>(null);
   const [tradeNotes, setTradeNotes] = useState<string[]>([]);
   // null when the trades tab couldn't load
@@ -50,6 +52,7 @@ export function useAutopick() {
 
       setTeams(liveTeams);
       setGrid(rounds);
+      setMarkerGrid(parseMarkerGrid(draftValues, liveTeams));
       setRankings(parsedRankings);
       setTradeNotes(parseTradeNotes(tradeValues));
       setTradeLogRows(tradeLogValues);
@@ -131,6 +134,11 @@ export function useAutopick() {
   }
 
   const onClockTeam = resolveOnClockTeam(onClock, overrideTeam, ownerOf);
+
+  let markerConflicts: MarkerConflict[] = [];
+  if (ownerOf) {
+    markerConflicts = findMarkerConflicts(markerGrid, ownerOf);
+  }
   const activeTeamIndex = onClockTeam.teamIndex;
 
   let suggestion: Suggestion | null = null;
@@ -181,6 +189,7 @@ export function useAutopick() {
     activeTeamIndex,
     viaTeamIndex: onClockTeam.viaTeamIndex,
     tradeLogError,
+    markerConflicts,
     draftComplete: grid !== null && onClock === null && overrideTeam === null,
     suggestion,
     tradeNotes,

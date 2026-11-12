@@ -76,3 +76,21 @@ Team names have to match the draft tab's row-2 names (case and extra spaces
 don't matter). Rows with an unknown team or a bad round/year are skipped and
 listed in a warning on the page. The tab refetches every 60 seconds while
 open, and a missing or empty Trades tab just shows everyone's own picks.
+
+## Filling traded picks into the draft board
+`scripts/fill-traded-picks.gs` is a Google Apps Script that writes trade
+markers like `BRAD K: ` into the draft tab from the Trades tab. The site
+itself never writes to the sheet; this script runs inside the sheet.
+
+Install once:
+1. In the sheet: Extensions -> Apps Script.
+2. Delete whatever is in `Code.gs`, paste in the whole script, and save.
+3. Close the Apps Script tab and reload the sheet. An **Autopick** menu shows up.
+4. Autopick -> Fill traded picks. The first time, Google asks you to
+   authorize it: pick your account, Advanced -> go to the project, Allow.
+
+Run it again any time the Trades tab changes. It only writes into empty or
+marker-only cells in B3:O18, never touches a cell with a player or anything
+else typed in it, and lists what it changed or skipped in a popup. Bump
+`DRAFT_YEAR` at the top of the script each year, same as `config.ts`.
+

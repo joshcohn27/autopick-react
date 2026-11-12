@@ -1,0 +1,222 @@
+// autopick: writes trade markers like "BRAD K: " into the draft board from
+// the trades tab. paste into the sheet via extensions > apps script.
+// it only ever writes plain values into the board cells (B3:O18), nothing else.
+
+const DRAFT_YEAR = 2027;
+const DRAFT_TAB = DRAFT_YEAR + ' Draft';
+const TRADES_TAB = DRAFT_YEAR + ' Trades';
+
+const HEADER_ROW = 2;
+const FIRST_ROUND_ROW = 3;
+const TOTAL_ROUNDS = 16;
+const FIRST_TEAM_COLUMN = 2;
+const TEAM_COUNT = 14;
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Autopick')
+    .addItem('Fill traded picks', 'fillTradedPicks')
+    .addToUi();
+}
+
+function normalizeName(name) {
+  return String(name).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function columnLetter(column) {
+  return String.fromCharCode(64 + column);
+}
+
+function markerFor(teamName) {
+  return teamName.toUpperCase() + ': ';
+}
+
+// the team index named before the colon, or -1. works on "GUPPY: " and "GUPPY: Davante Adams, LAR -WR"
+function markerTeam(text, teamIndexByName) {
+  const colonIndex = text.indexOf(':');
+  if (colonIndex === -1) {
+    return -1;
+  }
+  const prefix = normalizeName(text.slice(0, colonIndex));
+  if (prefix in teamIndexByName) {
+    return teamIndexByName[prefix];
+  }
+  return -1;
+}
+
+// an all-caps team name, a colon, and nothing else
+function isMarkerOnly(text, teamIndexByName) {
+  const colonIndex = text.indexOf(':');
+  if (colonIndex === -1) {
+    return false;
+  }
+  const prefix = text.slice(0, colonIndex).trim();
+  const rest = text.slice(colonIndex + 1).trim();
+  if (rest !== '') {
+    return false;
+  }
+  if (prefix !== prefix.toUpperCase()) {
+    return false;
+  }
+  return markerTeam(text, teamIndexByName) !== -1;
+}
+
+function isWholeNumber(text) {
+  return /^\d+$/.test(text);
+}
+
+// owners[round - 1][column] = team index that owns the pick now
+function readOwners(trades, teamNames, teamIndexByName, badRows) {
+  const owners = [];
+  for (let r = 0; r < TOTAL_ROUNDS; r++) {
+    owners.push(teamNames.map((name, i) => i));
+  }
+
+  // row 1 is headers. rows go top to bottom, so the lowest row wins.
+  for (let i = 1; i < trades.length; i++) {
+    const row = trades[i].map(cell => String(cell).trim());
+    const year = row[0] || '';
+    const round = row[1] || '';
+    const original = row[2] || '';
+    const newOwner = row[3] || '';
+
+    const isBlank = row.every(cell => cell === '');
+    if (isBlank) {
+      continue;
+    }
+
+    const problems = [];
+    if (!isWholeNumber(year)) {
+      problems.push('bad year "' + year + '"');
+    }
+    const roundNumber = Number(round);
+    const roundOk = isWholeNumber(round) && roundNumber >= 1 && roundNumber <= TOTAL_ROUNDS;
+    if (!roundOk) {
+      problems.push('bad round "' + round + '"');
+    }
+    if (!(normalizeName(original) in teamIndexByName)) {
+      problems.push('unknown original team "' + original + '"');
+    }
+    if (!(normalizeName(newOwner) in teamIndexByName)) {
+      problems.push('unknown new owner "' + newOwner + '"');
+    }
+
+    if (problems.length > 0) {
+      badRows.push('Row ' + (i + 1) + ': ' + problems.join(', '));
+      continue;
+    }
+    if (Number(year) !== DRAFT_YEAR) {
+      continue;
+    }
+
+    const column = teamIndexByName[normalizeName(original)];
+    owners[roundNumber - 1][column] = teamIndexByName[normalizeName(newOwner)];
+  }
+  return owners;
+}
+
+function fillTradedPicks() {
+  const ui = SpreadsheetApp.getUi();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+
+  const board = spreadsheet.getSheetByName(DRAFT_TAB);
+  if (!board) {
+    ui.alert('Fill traded picks', 'No "' + DRAFT_TAB + '" tab found.', ui.ButtonSet.OK);
+    return;
+  }
+
+  const teamNames = board
+    .getRange(HEADER_ROW, FIRST_TEAM_COLUMN, 1, TEAM_COUNT)
+    .getDisplayValues()[0]
+    .map(name => String(name).trim());
+  const teamIndexByName = {};
+  teamNames.forEach((name, i) => {
+    if (name !== '') {
+      teamIndexByName[normalizeName(name)] = i;
+    }
+  });
+
+  const badRows = [];
+  let trades = [];
+  const tradesSheet = spreadsheet.getSheetByName(TRADES_TAB);
+  if (tradesSheet) {
+    trades = tradesSheet.getDataRange().getDisplayValues();
+  }
+  const owners = readOwners(trades, teamNames, teamIndexByName, badRows);
+
+  const cells = board.getRange(FIRST_ROUND_ROW, FIRST_TEAM_COLUMN, TOTAL_ROUNDS, TEAM_COUNT);
+  const values = cells.getDisplayValues();
+  const formulas = cells.getFormulas();
+
+  const written = [];
+  const cleared = [];
+  const skipped = [];
+
+  for (let r = 0; r < TOTAL_ROUNDS; r++) {
+    for (let c = 0; c < TEAM_COUNT; c++) {
+      if (teamNames[c] === '') {
+        continue;
+      }
+
+      const trimmed = String(values[r][c]).trim();
+      const address = columnLetter(FIRST_TEAM_COLUMN + c) + (FIRST_ROUND_ROW + r);
+      const label = address + ' (' + teamNames[c] + ', round ' + (r + 1) + ')';
+      const owner = owners[r][c];
+      const isTraded = owner !== c;
+
+      // only empty or marker-only cells are ours to change
+      const hasFormula = formulas[r][c] !== '';
+      const isOurs = !hasFormula && (trimmed === '' || isMarkerOnly(trimmed, teamIndexByName));
+
+      let wanted = '';
+      if (isTraded) {
+        wanted = markerFor(teamNames[owner]);
+      }
+
+      if (isOurs) {
+        if (trimmed === wanted.trim()) {
+          continue;
+        }
+        cells.getCell(r + 1, c + 1).setValue(wanted);
+        if (wanted === '') {
+          cleared.push(label);
+        } else {
+          written.push(label + ' -> "' + wanted + '"');
+        }
+        continue;
+      }
+
+      // someone typed something here. only mention it when its marker doesn't match the trades tab.
+      const typedOwner = markerTeam(trimmed, teamIndexByName);
+      const matches = (isTraded && typedOwner === owner) || (!isTraded && typedOwner === -1);
+      if (!matches) {
+        let reason = 'has "' + trimmed + '"';
+        if (isTraded) {
+          reason += ', trades tab says ' + teamNames[owner];
+        } else {
+          reason += ', trades tab says it is not traded';
+        }
+        skipped.push(label + ' ' + reason);
+      }
+    }
+  }
+
+  const lines = [];
+  lines.push('Wrote ' + written.length + ' marker(s), cleared ' + cleared.length + '.');
+  if (written.length > 0) {
+    lines.push('', 'Written:', ...written);
+  }
+  if (cleared.length > 0) {
+    lines.push('', 'Cleared:', ...cleared);
+  }
+  if (skipped.length > 0) {
+    lines.push('', 'Left alone (already has something typed in it):', ...skipped);
+  }
+  if (badRows.length > 0) {
+    lines.push('', 'Skipped trade rows in ' + TRADES_TAB + ':', ...badRows);
+  }
+  if (!tradesSheet) {
+    lines.push('', 'No "' + TRADES_TAB + '" tab found, so nothing counts as traded.');
+  }
+  ui.alert('Fill traded picks', lines.join('\n'), ui.ButtonSet.OK);
+}

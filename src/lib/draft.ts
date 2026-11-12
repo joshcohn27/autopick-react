@@ -54,35 +54,44 @@ function parsePickText(text: string): ParsedPick | null {
   return null;
 }
 
+// a trade marker: the new owner's team name (any case), then a colon and the
+// player once drafted, e.g. "GUPPY: Davante Adams, LAR -WR" or just "BRAD K: ".
+// a bare team name with no colon ("brad k") is the older style of the same thing.
+export function splitTradeMarker(text: string, teamNames: string[]): { teamIndex: number; remainder: string } | null {
+  const trimmed = text.trim();
+  const colonIdx = trimmed.indexOf(':');
+
+  let prefix = trimmed;
+  let remainder = '';
+  if (colonIdx !== -1) {
+    prefix = trimmed.slice(0, colonIdx).trim();
+    remainder = trimmed.slice(colonIdx + 1).trim();
+  }
+
+  const teamIndex = teamNames.findIndex(t => t.toLowerCase() === prefix.toLowerCase());
+  if (teamIndex === -1) {
+    return null;
+  }
+  return { teamIndex, remainder };
+}
+
 export function parseDraftCell(raw: unknown, teamNames: string[] = []): DraftCell | null {
   const text = String(raw ?? '').trim();
   if (!text) return null;
 
-  // Trade marker: a team name, optionally followed by ": <the actual pick
-  // that landed in this column on that team's behalf>", e.g.
-  // "BRAD K: Ashton Jeanty, LV -RB" or a bare "GUPPY:" with nothing after
-  // it. Checked BEFORE the plain player-cell pattern below, because
-  // "BRAD K: Ashton Jeanty, LV -RB" would otherwise satisfy that pattern on
-  // its own (its comma is later in the string) and get treated as an
-  // ordinary pick for whatever column it's sitting in -- "BRAD K: " baked
-  // into the player name and no team attribution at all.
-  const colonIdx = text.indexOf(':');
-  if (colonIdx !== -1) {
-    const prefix = text.slice(0, colonIdx).trim();
-    const remainder = text.slice(colonIdx + 1).trim();
-    const prefixIdx = teamNames.findIndex(t => t.toLowerCase() === prefix.toLowerCase());
-    if (prefixIdx !== -1) {
-      const remainderPick = parsePickText(remainder);
-      if (remainderPick) {
-        // The main case this handles: a marker prefix followed by a real
-        // pick. Extract just the player -- don't keep the "TEAM: " text.
-        return { ...remainderPick, raw: text, tradeMarkerTeamIndex: prefixIdx };
-      }
-      // A bare marker ("GUPPY:" with nothing after it) or a remainder that
-      // doesn't parse as a player. Keep the team attribution either way --
-      // don't lose it just because there's nothing clean to extract.
-      return { player: text, nflTeam: null, position: 'UNKNOWN', raw: text, tradeMarkerTeamIndex: prefixIdx };
+  // checked before the plain player pattern, since "BRAD K: Ashton Jeanty, LV -RB"
+  // would otherwise match it with "BRAD K: " baked into the player name
+  const marker = splitTradeMarker(text, teamNames);
+  if (marker) {
+    // marker only: the pick hasn't been made yet
+    if (marker.remainder === '') {
+      return null;
     }
+    const markedPick = parsePickText(marker.remainder);
+    if (markedPick) {
+      return { ...markedPick, raw: text, tradeMarkerTeamIndex: marker.teamIndex };
+    }
+    return { player: text, nflTeam: null, position: 'UNKNOWN', raw: text, tradeMarkerTeamIndex: marker.teamIndex };
   }
 
   const pick = parsePickText(text);
@@ -90,19 +99,9 @@ export function parseDraftCell(raw: unknown, teamNames: string[] = []): DraftCel
     return { ...pick, raw: text };
   }
 
-  // Not a "Player, TEAM -POS" or "Team Name -DST" cell, and no colon-prefixed marker matched
-  // above. Fall back to the older convention: the WHOLE cleaned cell
-  // (trailing colon stripped) matching a team name exactly, e.g. a no-colon
-  // "brad k".
-  const cleaned = text.replace(/:\s*$/, '').trim();
-  const markerIdx = teamNames.findIndex(t => t.toLowerCase() === cleaned.toLowerCase());
-  if (markerIdx !== -1) {
-    return { player: text, nflTeam: null, position: 'UNKNOWN', raw: text, tradeMarkerTeamIndex: markerIdx };
-  }
-
   // Occupied but unparseable and not a recognized trade marker (a random
-  // note, a nickname that doesn't match any team name exactly, etc). Still
-  // counts as a used pick attributed to the column it's sitting in.
+  // note like "NO PICK - Punishment", a nickname that doesn't match any team
+  // name exactly, etc). Still counts as a used pick for the column it's in.
   return { player: text, nflTeam: null, position: 'UNKNOWN', raw: text };
 }
 
@@ -143,6 +142,59 @@ export function parseDraftGrid(values: unknown[][], teamNames: string[]): (Draft
     rounds.push(cells);
   }
   return rounds; // rounds[roundIndex][teamIndex]
+}
+
+// the trade marker team for every board cell (marker-only cells included),
+// or null where there's no marker. same shape as parseDraftGrid.
+export function parseMarkerGrid(values: unknown[][], teamNames: string[]): (number | null)[][] {
+  const teamColIdx = CONFIG.TEAM_COLUMNS.map(colLetterToIndex);
+  const rounds: (number | null)[][] = [];
+
+  for (let r = 0; r < CONFIG.TOTAL_ROUNDS; r++) {
+    const row = values[r + 1] || [];
+    const markers = teamColIdx.map(ci => {
+      const marker = splitTradeMarker(String(row[ci] ?? ''), teamNames);
+      if (marker) {
+        return marker.teamIndex;
+      }
+      return null;
+    });
+    rounds.push(markers);
+  }
+  return rounds;
+}
+
+// sheet address of a board cell, e.g. round 3 in column K -> "K5"
+export function draftCellAddress(round: number, teamIndex: number): string {
+  const headerRow = Number(CONFIG.DRAFT_RANGE.match(/\d+/)?.[0] ?? 1);
+  return `${CONFIG.TEAM_COLUMNS[teamIndex]}${headerRow + round}`;
+}
+
+export interface MarkerConflict {
+  address: string;
+  round: number;
+  columnTeamIndex: number;
+  markerTeamIndex: number;
+  ownerTeamIndex: number;
+}
+
+// cells whose marker names a different team than the trades tab does
+export function findMarkerConflicts(markers: (number | null)[][], ownerOf: PickOwnerLookup): MarkerConflict[] {
+  const conflicts: MarkerConflict[] = [];
+  markers.forEach((row, r) => {
+    row.forEach((markerTeamIndex, columnTeamIndex) => {
+      if (markerTeamIndex === null) {
+        return;
+      }
+      const round = r + 1;
+      const ownerTeamIndex = ownerOf(round, columnTeamIndex);
+      if (markerTeamIndex !== ownerTeamIndex) {
+        const address = draftCellAddress(round, columnTeamIndex);
+        conflicts.push({ address, round, columnTeamIndex, markerTeamIndex, ownerTeamIndex });
+      }
+    });
+  });
+  return conflicts;
 }
 
 export function parseRankings(values: unknown[][]): RankingsByPosition {
@@ -191,7 +243,8 @@ export function snakeOrderForRound(roundIndexZeroBased: number): number[] {
 // draft slot order itself doesn't change when a pick's rights get traded.
 //
 // ownerOf (from the trades tab) credits a filled traded slot to its current
-// owner; a trade marker typed in the cell still wins over it.
+// owner and beats a marker typed in the cell. without it, the cell's marker
+// decides, then the column.
 export function analyzeGrid(
   rounds: (DraftCell | null)[][],
   ownerOf?: PickOwnerLookup
@@ -204,11 +257,10 @@ export function analyzeGrid(
     for (const teamIdx of order) {
       const cell = rounds[r][teamIdx];
       if (cell) {
-        let slotOwner = teamIdx;
+        let effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? teamIdx;
         if (ownerOf) {
-          slotOwner = ownerOf(r + 1, teamIdx);
+          effectiveTeamIndex = ownerOf(r + 1, teamIdx);
         }
-        const effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? slotOwner;
         picks.push({ round: r + 1, teamIndex: effectiveTeamIndex, cell, pickNumber: picks.length + 1 });
       } else if (onClock === null) {
         onClock = { round: r + 1, teamIndex: teamIdx, pickNumber: picks.length + 1 };
