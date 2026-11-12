@@ -44,7 +44,7 @@ export const CONFIG = {
   // left-to-right order they're drafting in round 1.
   TEAM_COLUMNS: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'],
   TEAMS: [
-    'Leo L', 'JP', 'Josh C', 'Natalie P', 'Eli P', 'Colby L', 'Steven K',
+    'Leo L', 'JP', 'Cohn', 'Natalie P', 'Eli P', 'Colby L', 'Steven K',
     'Noah K', 'Eli C', 'Brad K', 'Saul M', 'Guppy', 'Ben N', 'Mitchell H'
   ],
   TOTAL_ROUNDS: 16,

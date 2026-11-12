@@ -118,14 +118,14 @@ describe('parseDraftCell', () => {
   });
 
   it('treats a marker-only cell as a pick not made yet, with or without the trailing space', () => {
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     expect(parseDraftCell('BRAD K: ', teamNames)).toBeNull();
     expect(parseDraftCell('GUPPY:', teamNames)).toBeNull();
     expect(parseDraftCell('brad k', teamNames)).toBeNull();
   });
 
   it('reads a marker plus DST', () => {
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     expect(parseDraftCell('BRAD K: Houston Texans -DST', teamNames)).toEqual({
       player: 'Houston Texans', nflTeam: 'HOU', position: 'DST',
       raw: 'BRAD K: Houston Texans -DST', tradeMarkerTeamIndex: 2
@@ -152,7 +152,7 @@ describe('parseDraftCell', () => {
   });
 
   it('does not treat a real player cell as a trade marker even if a team list is passed', () => {
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     const result = parseDraftCell('Saquon Barkley, PHI -RB', teamNames);
     expect(result?.tradeMarkerTeamIndex).toBeUndefined();
     expect(result?.position).toBe('RB');
@@ -161,7 +161,7 @@ describe('parseDraftCell', () => {
   it('does not match a nickname that is not an exact team-name spelling', () => {
     // "GUP" is not an exact match for "Guppy" -- this is the whole reason
     // the sheet convention requires exact spelling, just upper-cased.
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     const result = parseDraftCell('GUP:', teamNames);
     expect(result?.tradeMarkerTeamIndex).toBeUndefined();
     expect(result?.position).toBe('UNKNOWN');
@@ -171,7 +171,7 @@ describe('parseDraftCell', () => {
     // The marker's whole point is that the pick sitting in this column
     // belongs to another team -- the "BRAD K: " prefix is bookkeeping, not
     // part of the player's name, and must not end up on the Rosters tab.
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     const result = parseDraftCell('BRAD K: Ashton Jeanty, LV -RB', teamNames);
     expect(result).toEqual({
       player: 'Ashton Jeanty',
@@ -183,7 +183,7 @@ describe('parseDraftCell', () => {
   });
 
   it('extracts a marked pick case-insensitively on the marker prefix', () => {
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     const result = parseDraftCell("GUPPY: Ja'Marr Chase, CIN -WR", teamNames);
     expect(result).toEqual({
       player: "Ja'Marr Chase",
@@ -195,7 +195,7 @@ describe('parseDraftCell', () => {
   });
 
   it('keeps team attribution for a marker followed by something that is not a player', () => {
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
     const result = parseDraftCell('GUPPY: Odell', teamNames);
     expect(result?.tradeMarkerTeamIndex).toBe(1);
     expect(result?.position).toBe('UNKNOWN');
@@ -203,14 +203,13 @@ describe('parseDraftCell', () => {
   });
 
   it('falls through to the freeform-note fallback when the colon prefix is not a team name', () => {
-    // Real historical data: "COHN" doesn't match any current team name, so
-    // this is just a note, not a marker -- no team attribution, whole text
-    // kept as-is.
-    const teamNames = ['Josh C', 'Guppy', 'Brad K'];
-    const result = parseDraftCell('COHN: Tyrone', teamNames);
+    // "JOSHY" doesn't match any team name, so this is just a note, not a
+    // marker -- no team attribution, whole text kept as-is.
+    const teamNames = ['Cohn', 'Guppy', 'Brad K'];
+    const result = parseDraftCell('JOSHY: Tyrone', teamNames);
     expect(result?.tradeMarkerTeamIndex).toBeUndefined();
     expect(result?.position).toBe('UNKNOWN');
-    expect(result?.player).toBe('COHN: Tyrone');
+    expect(result?.player).toBe('JOSHY: Tyrone');
   });
 });
 

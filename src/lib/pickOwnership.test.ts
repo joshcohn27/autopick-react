@@ -5,7 +5,7 @@ import {
 } from './pickOwnership';
 import type { TeamPickOwnership } from './pickOwnership';
 
-const TEAMS = ['Guppy', 'Brad K', 'Alex W', 'Josh C'];
+const TEAMS = ['Guppy', 'Brad K', 'Alex W', 'Cohn'];
 const ROUNDS = 3;
 const HEADER = ['Year', 'Round', 'Original Team', 'New Owner', 'Notes'];
 
@@ -43,7 +43,7 @@ describe('pick ownership', () => {
   it('gives every team its own picks when there are no trades', () => {
     const { teams, warnings } = ownership([]);
     expect(warnings).toEqual([]);
-    expect(teams.map(t => t.team)).toEqual(['Alex W', 'Brad K', 'Guppy', 'Josh C']);
+    expect(teams.map(t => t.team)).toEqual(['Alex W', 'Brad K', 'Cohn', 'Guppy']);
     for (const team of teams) {
       expect(team.owned.map(formatOwnedPick)).toEqual(['1st rounder', '2nd rounder', '3rd rounder']);
       expect(team.tradedAway).toEqual([]);
@@ -67,16 +67,16 @@ describe('pick ownership', () => {
 
   it('applies a multi-pick trade and keeps notes', () => {
     const { teams } = ownership([
-      ['2027', '1', 'Alex W', 'Josh C', 'top 3 protected'],
-      ['2027', '2', 'Josh C', 'Alex W', ''],
-      ['2027', '3', 'Josh C', 'Alex W', '']
+      ['2027', '1', 'Alex W', 'Cohn', 'top 3 protected'],
+      ['2027', '2', 'Cohn', 'Alex W', ''],
+      ['2027', '3', 'Cohn', 'Alex W', '']
     ]);
-    const josh = card(teams, 'Josh C');
+    const josh = card(teams, 'Cohn');
     expect(josh.owned.map(formatOwnedPick)).toEqual(['1st rounder', '1st rounder (via Alex W)']);
     expect(josh.owned[1].notes).toBe('top 3 protected');
-    expect(tradedAwayLabels(teams, 'Josh C')).toEqual(['2nd rounder (to Alex W)', '3rd rounder (to Alex W)']);
+    expect(tradedAwayLabels(teams, 'Cohn')).toEqual(['2nd rounder (to Alex W)', '3rd rounder (to Alex W)']);
     expect(ownedLabels(teams, 'Alex W')).toEqual([
-      '2nd rounder', '2nd rounder (via Josh C)', '3rd rounder', '3rd rounder (via Josh C)'
+      '2nd rounder', '2nd rounder (via Cohn)', '3rd rounder', '3rd rounder (via Cohn)'
     ]);
   });
 
@@ -104,24 +104,24 @@ describe('pick ownership', () => {
 
   it('still returns a card for a team that traded every pick away', () => {
     const { teams } = ownership([
-      [2027, 1, 'Josh C', 'Guppy', ''],
-      [2027, 2, 'Josh C', 'Brad K', ''],
-      [2027, 3, 'Josh C', 'Guppy', '']
+      [2027, 1, 'Cohn', 'Guppy', ''],
+      [2027, 2, 'Cohn', 'Brad K', ''],
+      [2027, 3, 'Cohn', 'Guppy', '']
     ]);
-    const josh = card(teams, 'Josh C');
+    const josh = card(teams, 'Cohn');
     expect(josh.owned).toEqual([]);
-    expect(tradedAwayLabels(teams, 'Josh C')).toEqual([
+    expect(tradedAwayLabels(teams, 'Cohn')).toEqual([
       '1st rounder (to Guppy)', '2nd rounder (to Brad K)', '3rd rounder (to Guppy)'
     ]);
   });
 
   it('keeps future-year trades out of the current year and lists the year', () => {
-    const rows = [[2028, 1, 'Guppy', 'Josh C', '']];
+    const rows = [[2028, 1, 'Guppy', 'Cohn', '']];
     const current = ownership(rows, 2027);
-    expect(ownedLabels(current.teams, 'Josh C')).toEqual(['1st rounder', '2nd rounder', '3rd rounder']);
+    expect(ownedLabels(current.teams, 'Cohn')).toEqual(['1st rounder', '2nd rounder', '3rd rounder']);
 
     const future = ownership(rows, 2028);
-    expect(ownedLabels(future.teams, 'Josh C')).toEqual([
+    expect(ownedLabels(future.teams, 'Cohn')).toEqual([
       '1st rounder', '1st rounder (via Guppy)', '2nd rounder', '3rd rounder'
     ]);
 
@@ -130,9 +130,9 @@ describe('pick ownership', () => {
 
   it('only lists the default year and later ones', () => {
     const { trades } = ownership([
-      [2026, 1, 'Guppy', 'Josh C', ''],
-      [2029, 1, 'Guppy', 'Josh C', ''],
-      [2028, 1, 'Guppy', 'Josh C', '']
+      [2026, 1, 'Guppy', 'Cohn', ''],
+      [2029, 1, 'Guppy', 'Cohn', ''],
+      [2028, 1, 'Guppy', 'Cohn', '']
     ]);
     expect(availableYears(trades, 2027)).toEqual([2027, 2028, 2029]);
   });
@@ -179,7 +179,7 @@ describe('pick ownership', () => {
 
   it('sorts acquired picks in the same round by original team', () => {
     const { teams } = ownership([
-      [2027, 1, 'Josh C', 'Guppy', ''],
+      [2027, 1, 'Cohn', 'Guppy', ''],
       [2027, 1, 'Alex W', 'Guppy', ''],
       [2027, 1, 'Brad K', 'Guppy', '']
     ]);
@@ -187,7 +187,7 @@ describe('pick ownership', () => {
       '1st rounder',
       '1st rounder (via Alex W)',
       '1st rounder (via Brad K)',
-      '1st rounder (via Josh C)'
+      '1st rounder (via Cohn)'
     ]);
   });
 });
@@ -196,14 +196,14 @@ describe('current pick owner', () => {
   const rows = [
     [2027, 3, 'Guppy', 'Brad K', ''],
     [2027, 3, 'Guppy', 'Alex W', 'flipped'],
-    [2028, 1, 'Josh C', 'Guppy', '']
+    [2028, 1, 'Cohn', 'Guppy', '']
   ];
 
   it('uses the lowest matching row, the right year, and defaults to the original team', () => {
     const { trades } = parseTradeRows([HEADER, ...rows], TEAMS, ROUNDS);
     expect(currentPickOwner(trades, 2027, 3, 'Guppy')).toBe('Alex W');
-    expect(currentPickOwner(trades, 2027, 1, 'Josh C')).toBe('Josh C');
-    expect(currentPickOwner(trades, 2028, 1, 'Josh C')).toBe('Guppy');
+    expect(currentPickOwner(trades, 2027, 1, 'Cohn')).toBe('Cohn');
+    expect(currentPickOwner(trades, 2028, 1, 'Cohn')).toBe('Guppy');
     expect(currentPickOwner(trades, 2027, 2, 'Brad K')).toBe('Brad K');
   });
 
