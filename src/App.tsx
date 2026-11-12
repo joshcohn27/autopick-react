@@ -14,6 +14,13 @@ import { CONFIG } from './config';
 import { TABS, tabFromPath } from './lib/routes';
 import type { Tab } from './lib/routes';
 
+function ownerLabel(teams: string[], ownerTeamIndex: number | null): string {
+  if (ownerTeamIndex === null) {
+    return 'nobody (punishment)';
+  }
+  return teams[ownerTeamIndex];
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>(() => tabFromPath(window.location.pathname));
 
@@ -131,7 +138,7 @@ export default function App() {
                 {markerConflicts.map(c => (
                   <li key={c.address}>
                     {c.address} ({teams[c.columnTeamIndex]}, round {c.round}) says {teams[c.markerTeamIndex]}, but the
-                    Trades tab says {teams[c.ownerTeamIndex]}
+                    Trades tab says {ownerLabel(teams, c.ownerTeamIndex)}
                   </li>
                 ))}
               </ul>

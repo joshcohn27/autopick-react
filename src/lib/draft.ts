@@ -175,7 +175,8 @@ export interface MarkerConflict {
   round: number;
   columnTeamIndex: number;
   markerTeamIndex: number;
-  ownerTeamIndex: number;
+  // null when the trades tab says the pick was taken away (punishment)
+  ownerTeamIndex: number | null;
 }
 
 // cells whose marker names a different team than the trades tab does
@@ -251,19 +252,34 @@ export function analyzeGrid(
 ): { picks: Pick[]; onClock: OnClock | null } {
   const picks: Pick[] = [];
   let onClock: OnClock | null = null;
+  // every slot that's been used up, including punished ones nobody owns
+  let slotsUsed = 0;
 
   for (let r = 0; r < rounds.length; r++) {
     const order = snakeOrderForRound(r);
     for (const teamIdx of order) {
       const cell = rounds[r][teamIdx];
+
+      let owner: number | null = teamIdx;
+      if (ownerOf) {
+        owner = ownerOf(r + 1, teamIdx);
+      }
+
+      // a punished slot is skipped, whether or not its cell has text yet
+      if (owner === null) {
+        slotsUsed++;
+        continue;
+      }
+
       if (cell) {
-        let effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? teamIdx;
-        if (ownerOf) {
-          effectiveTeamIndex = ownerOf(r + 1, teamIdx);
+        slotsUsed++;
+        let effectiveTeamIndex = owner;
+        if (!ownerOf) {
+          effectiveTeamIndex = cell.tradeMarkerTeamIndex ?? teamIdx;
         }
-        picks.push({ round: r + 1, teamIndex: effectiveTeamIndex, cell, pickNumber: picks.length + 1 });
+        picks.push({ round: r + 1, teamIndex: effectiveTeamIndex, cell, pickNumber: slotsUsed });
       } else if (onClock === null) {
-        onClock = { round: r + 1, teamIndex: teamIdx, pickNumber: picks.length + 1 };
+        onClock = { round: r + 1, teamIndex: teamIdx, pickNumber: slotsUsed + 1 };
       }
     }
   }
@@ -290,8 +306,8 @@ export function resolveOnClockTeam(
   }
 
   const owner = ownerOf(onClock.round, onClock.teamIndex);
-  if (owner === onClock.teamIndex) {
-    return { teamIndex: owner, viaTeamIndex: null };
+  if (owner === null || owner === onClock.teamIndex) {
+    return { teamIndex: onClock.teamIndex, viaTeamIndex: null };
   }
   return { teamIndex: owner, viaTeamIndex: onClock.teamIndex };
 }

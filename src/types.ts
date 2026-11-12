@@ -28,8 +28,8 @@ export interface Pick {
 }
 
 // who owns a draft slot right now, given the round and the slot's original
-// team (its column). returns a team index.
-export type PickOwnerLookup = (round: number, columnTeamIndex: number) => number;
+// team (its column). returns a team index, or null when nobody does (punishment).
+export type PickOwnerLookup = (round: number, columnTeamIndex: number) => number | null;
 
 export interface OnClock {
   round: number;

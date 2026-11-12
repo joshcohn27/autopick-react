@@ -60,21 +60,28 @@ really owns a slot from it. Use the "Pick was traded?" override for that.
 
 ## Pick ownership (Trades tab)
 The Pick Ownership tab starts every team with its own pick in every round
-and applies trades logged in the "<year> Trades" tab, e.g. `2027 Trades`
-(`TRADE_LOG_TAB` in `config.ts`). Future-year picks traded now go in the same
-tab with a later Year; when `DRAFT_YEAR` gets bumped, carry those rows over to
-the new year's Trades tab. Header row to paste into row 1:
+and applies the rows in that year's "<year> Trades" tab, e.g. `2027 Trades`
+(`TRADE_LOG_TAB` in `config.ts`). Future-year picks traded now go in their own
+tab, like `2028 Trades`, with the same columns; the page's year dropdown picks
+up any later "<year> Trades" tab on its own. Header row to paste into row 1:
 
 ```
-Year	Round	Original Team	New Owner	Notes
+Type	Round	Original Team	New Owner	Notes
 ```
 
-One row = one pick moving, so a 3-pick trade is 3 rows. Rows apply top to
-bottom; if the same pick (year + round + original team) shows up again, the
-lowest row wins, so a re-flipped pick just gets a new row at the bottom.
-Team names have to match the draft tab's row-2 names (case and extra spaces
-don't matter). Rows with an unknown team or a bad round/year are skipped and
-listed in a warning on the page. The tab refetches every 60 seconds while
+Type is `Trade` or `Punishment`. A Punishment row takes the pick away from
+the original team and gives it to nobody (leave New Owner blank); the script
+writes "NO PICK - " plus the Notes into that cell, or "NO PICK - Punishment"
+when Notes is blank.
+
+One row = one pick, so a 3-pick trade is 3 rows. Rows apply top to bottom;
+if the same pick (round + original team) shows up again, the lowest row wins,
+so a re-flipped pick just gets a new row at the bottom. Team names have to
+match the draft tab's row-2 names (case and extra spaces don't matter). Rows
+with an unknown team, a bad round, or a bad type are skipped and listed in a
+warning on the page. Because everything lives in the Trades tab by team name,
+reordering row 2 for a new draft order just moves the markers and punishments
+with their teams the next time the script runs. The tab refetches every 60 seconds while
 open, and a missing or empty Trades tab just shows everyone's own picks.
 
 ## Filling traded picks into the draft board
@@ -93,8 +100,9 @@ To keep it up to date on its own: Autopick -> Turn on auto-fill (Google asks
 to approve permissions again, since it now installs a trigger). After that,
 markers update a few seconds after any change, including deleted trade rows,
 with no popup. Autopick -> Turn off auto-fill stops it. Without auto-fill,
-run Fill traded picks again any time the Trades tab changes. It only writes into empty or
-marker-only cells in B3:O18, never touches a cell with a player or anything
-else typed in it, and lists what it changed or skipped in a popup. Bump
+run Fill traded picks again any time the Trades tab changes. It only writes into empty,
+marker-only, or "NO PICK ..." cells in B3:O18, never touches a cell with a
+player or anything else typed in it (like a retired player autopicked into a
+punished slot), and lists what it changed or skipped in a popup. Bump
 `DRAFT_YEAR` at the top of the script each year, same as `config.ts`.
 

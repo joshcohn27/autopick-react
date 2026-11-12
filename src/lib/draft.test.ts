@@ -952,3 +952,47 @@ describe('who is on the clock with pick ownership', () => {
     expect(countRemainingPicks(grid, [{ round: 3, teamIndex: 0 }])).toBe(1);
   });
 });
+
+describe('punished picks on the draft board', () => {
+  // column 0's round 1 pick was taken away: nobody owns it
+  const punished = (round: number, col: number) => {
+    if (round === 1 && col === 0) {
+      return null;
+    }
+    return col;
+  };
+
+  function emptyBoard(): unknown[][] {
+    const values: unknown[][] = [['Round', ...CONFIG.TEAMS]];
+    for (let r = 1; r <= 16; r++) {
+      values.push(['Round' + r, ...CONFIG.TEAMS.map(() => '')]);
+    }
+    return values;
+  }
+
+  it('skips an empty punished slot when finding who is on the clock', () => {
+    const grid = parseDraftGrid(emptyBoard(), CONFIG.TEAMS);
+    const { onClock, picks } = analyzeGrid(grid, punished);
+    expect(picks).toEqual([]);
+    expect(onClock).toEqual({ round: 1, teamIndex: 1, pickNumber: 2 });
+  });
+
+  it('a filled punished slot counts as a used pick but belongs to nobody', () => {
+    const values = emptyBoard();
+    values[1][1] = 'NO PICK - Punishment';
+    const grid = parseDraftGrid(values, CONFIG.TEAMS);
+    const { onClock, picks } = analyzeGrid(grid, punished);
+    expect(picks).toEqual([]);
+    expect(onClock?.pickNumber).toBe(2);
+  });
+
+  it('flags a board marker sitting in a punished slot', () => {
+    const values = emptyBoard();
+    values[1][1] = `${CONFIG.TEAMS[4].toUpperCase()}: `;
+    const conflicts = findMarkerConflicts(parseMarkerGrid(values, CONFIG.TEAMS), punished);
+    expect(conflicts).toEqual([
+      { address: 'B3', round: 1, columnTeamIndex: 0, markerTeamIndex: 4, ownerTeamIndex: null }
+    ]);
+  });
+});
+

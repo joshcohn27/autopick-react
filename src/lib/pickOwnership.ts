@@ -1,17 +1,24 @@
 // pick ownership = every team owns its own pick in every round, then the
-// Trades tab rows get applied on top, top to bottom (lowest row wins).
+// "<year> Trades" tab rows get applied on top, top to bottom (lowest row wins).
+// columns: A Type (Trade or Punishment), B Round, C Original Team,
+// D New Owner (blank for a punishment), E Notes.
 // pure functions only, no fetching or react in here.
+
+export type TradeType = 'trade' | 'punishment';
 
 export interface PickTrade {
   rowNumber: number;
   year: number;
+  type: TradeType;
   round: number;
   originalTeam: string;
-  newOwner: string;
+  // null when the pick was taken away as a punishment: nobody owns it
+  newOwner: string | null;
   notes: string;
 }
 
 export interface TradeRowWarning {
+  year: number;
   rowNumber: number;
   reason: string;
   rowText: string;
@@ -26,7 +33,8 @@ export interface OwnedPick {
 
 export interface TradedAwayPick {
   round: number;
-  newOwner: string;
+  // null for a punishment
+  newOwner: string | null;
   notes: string;
 }
 
@@ -35,6 +43,8 @@ export interface TeamPickOwnership {
   owned: OwnedPick[];
   tradedAway: TradedAwayPick[];
 }
+
+const TRADE_TAB_PATTERN = /^(\d{4}) Trades$/i;
 
 function normalizeName(name: string): string {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -59,10 +69,43 @@ function parseWholeNumber(text: string): number | null {
   return Number(text);
 }
 
+function parseTradeType(text: string): TradeType | null {
+  const lowered = text.toLowerCase();
+  if (lowered === 'trade') {
+    return 'trade';
+  }
+  if (lowered === 'punishment') {
+    return 'punishment';
+  }
+  return null;
+}
+
+export function tradeTabName(year: number): string {
+  return `${year} Trades`;
+}
+
+// years to show: the current draft year, plus any later year that has its own trades tab
+export function tradeTabYears(sheetTitles: string[], defaultYear: number): number[] {
+  const years = new Set<number>();
+  years.add(defaultYear);
+  for (const title of sheetTitles) {
+    const match = title.trim().match(TRADE_TAB_PATTERN);
+    if (match) {
+      const year = Number(match[1]);
+      if (year > defaultYear) {
+        years.add(year);
+      }
+    }
+  }
+  return [...years].sort((a, b) => a - b);
+}
+
+// one "<year> Trades" tab's rows. the year comes from the tab, not a column.
 export function parseTradeRows(
   values: unknown[][],
   teams: string[],
-  totalRounds: number
+  totalRounds: number,
+  year: number
 ): { trades: PickTrade[]; warnings: TradeRowWarning[] } {
   const teamByName = new Map<string, string>();
   for (const team of teams) {
@@ -77,13 +120,13 @@ export function parseTradeRows(
     const row = values[i] ?? [];
     const rowNumber = i + 1;
 
-    const yearText = cellText(row, 0);
+    const typeText = cellText(row, 0);
     const roundText = cellText(row, 1);
     const originalText = cellText(row, 2);
     const newOwnerText = cellText(row, 3);
     const notes = cellText(row, 4);
 
-    const cells = [yearText, roundText, originalText, newOwnerText, notes];
+    const cells = [typeText, roundText, originalText, newOwnerText, notes];
     const isBlank = cells.every(text => text === '');
     if (isBlank) {
       continue;
@@ -91,9 +134,9 @@ export function parseTradeRows(
 
     const problems: string[] = [];
 
-    const year = parseWholeNumber(yearText);
-    if (year === null) {
-      problems.push(`bad year "${yearText}"`);
+    const type = parseTradeType(typeText);
+    if (type === null) {
+      problems.push(`bad type "${typeText}" (should be Trade or Punishment)`);
     }
 
     const round = parseWholeNumber(roundText);
@@ -107,13 +150,20 @@ export function parseTradeRows(
       problems.push(`unknown original team "${originalText}"`);
     }
 
-    const newOwner = teamByName.get(normalizeName(newOwnerText));
-    if (newOwner === undefined) {
-      problems.push(`unknown new owner "${newOwnerText}"`);
+    // a punishment sends the pick to nobody, so the new owner column is ignored
+    let newOwner: string | null = null;
+    if (type === 'trade') {
+      const found = teamByName.get(normalizeName(newOwnerText));
+      if (found === undefined) {
+        problems.push(`unknown new owner "${newOwnerText}"`);
+      } else {
+        newOwner = found;
+      }
     }
 
     if (problems.length > 0) {
       warnings.push({
+        year,
         rowNumber,
         reason: problems.join(', '),
         rowText: cells.filter(text => text !== '').join(' | ')
@@ -122,23 +172,20 @@ export function parseTradeRows(
     }
 
     // no problems means everything parsed, this just tells typescript that
-    if (year === null || round === null) {
-      continue;
-    }
-    if (originalTeam === undefined || newOwner === undefined) {
+    if (type === null || round === null || originalTeam === undefined) {
       continue;
     }
 
-    trades.push({ rowNumber, year, round, originalTeam, newOwner, notes });
+    trades.push({ rowNumber, year, type, round, originalTeam, newOwner, notes });
   }
 
   return { trades, warnings };
 }
 
-// who owns one pick right now: the lowest matching trade row wins,
-// otherwise it's still the original team's
-export function currentPickOwner(trades: PickTrade[], year: number, round: number, originalTeam: string): string {
-  let owner = originalTeam;
+// who owns one pick right now: the lowest matching row wins, otherwise it's
+// still the original team's. null means it was taken away as a punishment.
+export function currentPickOwner(trades: PickTrade[], year: number, round: number, originalTeam: string): string | null {
+  let owner: string | null = originalTeam;
   for (const trade of trades) {
     const samePick = trade.year === year && trade.round === round && trade.originalTeam === originalTeam;
     if (samePick) {
@@ -148,28 +195,23 @@ export function currentPickOwner(trades: PickTrade[], year: number, round: numbe
   return owner;
 }
 
-// the same thing by team index, for the draft board
-export function pickOwnerLookup(teams: string[], year: number, trades: PickTrade[]): (round: number, columnTeamIndex: number) => number {
+// the same thing by team index, for the draft board. null = nobody (punishment).
+export function pickOwnerLookup(
+  teams: string[],
+  year: number,
+  trades: PickTrade[]
+): (round: number, columnTeamIndex: number) => number | null {
   return (round, columnTeamIndex) => {
     const owner = currentPickOwner(trades, year, round, teams[columnTeamIndex]);
+    if (owner === null) {
+      return null;
+    }
     const ownerIndex = teams.indexOf(owner);
     if (ownerIndex === -1) {
       return columnTeamIndex;
     }
     return ownerIndex;
   };
-}
-
-// the default year plus any later years that show up in the trades
-export function availableYears(trades: PickTrade[], defaultYear: number): number[] {
-  const years = new Set<number>();
-  years.add(defaultYear);
-  for (const trade of trades) {
-    if (trade.year > defaultYear) {
-      years.add(trade.year);
-    }
-  }
-  return [...years].sort((a, b) => a - b);
 }
 
 function pickKey(round: number, originalTeam: string): string {
@@ -202,7 +244,7 @@ export function buildPickOwnership(
     for (let round = 1; round <= totalRounds; round++) {
       const trade = latestTrade.get(pickKey(round, originalTeam));
 
-      let owner = originalTeam;
+      let owner: string | null = originalTeam;
       let notes = '';
       if (trade) {
         owner = trade.newOwner;
@@ -210,7 +252,9 @@ export function buildPickOwnership(
       }
 
       const isOwn = owner === originalTeam;
-      ownedByTeam.get(owner)?.push({ round, originalTeam, isOwn, notes });
+      if (owner !== null) {
+        ownedByTeam.get(owner)?.push({ round, originalTeam, isOwn, notes });
+      }
 
       if (!isOwn) {
         tradedAwayByTeam.get(originalTeam)?.push({ round, newOwner: owner, notes });
@@ -248,7 +292,7 @@ function compareTradedAwayPicks(a: TradedAwayPick, b: TradedAwayPick): number {
   if (a.round !== b.round) {
     return a.round - b.round;
   }
-  return compareNames(a.newOwner, b.newOwner);
+  return compareNames(a.newOwner ?? '', b.newOwner ?? '');
 }
 
 export function ordinal(n: number): string {
@@ -279,5 +323,9 @@ export function formatOwnedPick(pick: OwnedPick): string {
 }
 
 export function formatTradedAwayPick(pick: TradedAwayPick): string {
-  return `${ordinal(pick.round)} rounder (to ${pick.newOwner})`;
+  const label = `${ordinal(pick.round)} rounder`;
+  if (pick.newOwner === null) {
+    return `${label} (punishment)`;
+  }
+  return `${label} (to ${pick.newOwner})`;
 }

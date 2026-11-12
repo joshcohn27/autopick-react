@@ -66,8 +66,9 @@ export const CONFIG = {
   } as Record<string, string>,
 
   // --- Pick ownership (Trades tab) ---------------------------------
-  // one row per pick moving: Year | Round | Original Team | New Owner | Notes.
-  // future-year dynasty trades go in this same tab, Year column says which draft.
+  // one row per pick: Type (Trade or Punishment) | Round | Original Team |
+  // New Owner (blank for a punishment) | Notes. future-year dynasty trades
+  // go in their own "<year> Trades" tab with the same columns.
   TRADE_LOG_TAB: `${DRAFT_YEAR} Trades`,
   TRADE_LOG_RANGE: 'A1:E2000',
   TRADE_LOG_POLL_INTERVAL_MS: 60 * 1000,

@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { CONFIG } from '../config';
 import { useTradeLog } from '../hooks/useTradeLog';
+import type { TradeLog } from '../hooks/useTradeLog';
 import {
-  availableYears, buildPickOwnership, formatTradedAwayPick, ordinal, parseTradeRows
+  buildPickOwnership, formatTradedAwayPick, ordinal, parseTradeRows, tradeTabName
 } from '../lib/pickOwnership';
-import type { OwnedPick, TeamPickOwnership, TradeRowWarning } from '../lib/pickOwnership';
+import type { OwnedPick, PickTrade, TeamPickOwnership, TradeRowWarning } from '../lib/pickOwnership';
 import { formatTimestamp } from '../lib/time';
 
 interface Props {
@@ -25,11 +26,11 @@ function WarningsPanel({ warnings }: { warnings: TradeRowWarning[] }) {
 
   return (
     <section className="trade-notes-panel">
-      <div className="eyebrow">Skipped {warnings.length} row(s) in the {CONFIG.TRADE_LOG_TAB} tab</div>
+      <div className="eyebrow">Skipped {warnings.length} trade row(s)</div>
       <ul>
         {warnings.map(warning => (
-          <li key={warning.rowNumber}>
-            Row {warning.rowNumber}: {warning.reason}
+          <li key={`${warning.year}-${warning.rowNumber}`}>
+            {tradeTabName(warning.year)} row {warning.rowNumber}: {warning.reason}
             <span className="pick-ownership-row-text"> ({warning.rowText})</span>
           </li>
         ))}
@@ -82,18 +83,34 @@ function TeamCard({ ownership }: { ownership: TeamPickOwnership }) {
   );
 }
 
+// every year's tab parsed on its own, then merged
+function parseTradeLogs(logs: TradeLog[], teams: string[]): { trades: PickTrade[]; warnings: TradeRowWarning[] } {
+  const trades: PickTrade[] = [];
+  const warnings: TradeRowWarning[] = [];
+  for (const log of logs) {
+    const parsed = parseTradeRows(log.values, teams, CONFIG.TOTAL_ROUNDS, log.year);
+    trades.push(...parsed.trades);
+    warnings.push(...parsed.warnings);
+  }
+  return { trades, warnings };
+}
+
+function logYears(logs: TradeLog[]): number[] {
+  const years = logs.map(log => log.year);
+  if (!years.includes(CONFIG.DRAFT_YEAR)) {
+    years.push(CONFIG.DRAFT_YEAR);
+  }
+  return years.sort((a, b) => a - b);
+}
+
 export function PickOwnershipPanel({ teams }: Props) {
   const tradeLog = useTradeLog();
   const [year, setYear] = useState(CONFIG.DRAFT_YEAR);
 
-  const parsed = useMemo(
-    () => parseTradeRows(tradeLog.rows, teams, CONFIG.TOTAL_ROUNDS),
-    [tradeLog.rows, teams]
-  );
+  const parsed = useMemo(() => parseTradeLogs(tradeLog.logs, teams), [tradeLog.logs, teams]);
+  const years = logYears(tradeLog.logs);
 
-  const years = availableYears(parsed.trades, CONFIG.DRAFT_YEAR);
-
-  // if the picked year's trades got removed from the sheet, fall back
+  // if the picked year's tab got removed from the sheet, fall back
   let selectedYear = year;
   if (!years.includes(year)) {
     selectedYear = CONFIG.DRAFT_YEAR;
@@ -113,7 +130,7 @@ export function PickOwnershipPanel({ teams }: Props) {
       <div className="pick-ownership-controls">
         <label>
           Draft year{' '}
-          <select value={selectedYear}onChange={e => setYear(Number(e.target.value))}>
+          <select value={selectedYear} onChange={e => setYear(Number(e.target.value))}>
             {years.map(y => (
               <option key={y} value={y}>{y}</option>
             ))}
@@ -128,7 +145,7 @@ export function PickOwnershipPanel({ teams }: Props) {
       </div>
 
       {tradeLog.errorMessage && (
-        <div className="trade-notes-panel">Couldn't load the {CONFIG.TRADE_LOG_TAB} tab: {tradeLog.errorMessage}</div>
+        <div className="trade-notes-panel">Couldn't load the Trades tabs: {tradeLog.errorMessage}</div>
       )}
 
       <WarningsPanel warnings={parsed.warnings} />

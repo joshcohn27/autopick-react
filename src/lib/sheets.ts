@@ -1,4 +1,5 @@
 import { CONFIG } from '../config';
+import { tradeTabName, tradeTabYears } from './pickOwnership';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -80,13 +81,32 @@ function isMissingTabError(err: unknown): boolean {
 }
 
 // no Trades tab yet just means no trades logged yet
-export async function fetchTradeLog(): Promise<unknown[][]> {
+export async function fetchTradeLog(year: number = CONFIG.DRAFT_YEAR): Promise<unknown[][]> {
   try {
-    return await fetchRange(CONFIG.TRADE_LOG_TAB, CONFIG.TRADE_LOG_RANGE);
+    return await fetchRange(tradeTabName(year), CONFIG.TRADE_LOG_RANGE);
   } catch (err) {
     if (isMissingTabError(err)) {
       return [];
     }
     throw err;
   }
+}
+
+async function fetchSheetTitles(): Promise<string[]> {
+  const url = `${SHEETS_API}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title&key=${CONFIG.API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new SheetsApiError(res.status, body);
+  }
+  const data = await res.json();
+  const sheets: { properties?: { title?: string } }[] = data.sheets || [];
+  return sheets.map(sheet => sheet.properties?.title ?? '');
+}
+
+// this year's trades tab plus any later "<year> Trades" tabs, for the pick ownership page
+export async function fetchTradeLogs(): Promise<{ year: number; values: unknown[][] }[]> {
+  const titles = await fetchSheetTitles();
+  const years = tradeTabYears(titles, CONFIG.DRAFT_YEAR);
+  return Promise.all(years.map(async year => ({ year, values: await fetchTradeLog(year) })));
 }

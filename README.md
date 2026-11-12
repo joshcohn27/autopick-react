@@ -68,7 +68,7 @@ src/
     adp-data.ts                the ADP dataset itself (see its header comment for provenance)
   hooks/
     useAutopick.ts             polling / auto-off / state orchestration
-    useTradeLog.ts             Trades tab fetch, refetched every 60s while the tab is open
+    useTradeLog.ts             "<year> Trades" tabs fetch, refetched every 60s while the tab is open
   components/
     WelcomeModal.tsx            one-time "flip the toggle on" popup (first visit only)
     TopBar.tsx                 status line + drafting toggle + manual pull

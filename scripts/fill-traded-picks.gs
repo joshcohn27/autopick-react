@@ -15,6 +15,9 @@ const TOTAL_ROUNDS = 16;
 const FIRST_TEAM_COLUMN = 2;
 const TEAM_COUNT = 14;
 
+// owner value for a pick taken away as a punishment
+const PUNISHED = -1;
+
 function fillTradedPicks() {
   fillBoard(false);
 }
@@ -49,7 +52,18 @@ function fillBoard(quiet) {
   if (tradesSheet) {
     trades = tradesSheet.getDataRange().getDisplayValues();
   }
-  const owners = readOwners(trades, teamNames, teamIndexByName, badRows);
+  // the old layout had a year in column A. bail out instead of wiping every marker.
+  const hasOldYearColumn = trades.slice(1).some(row => /^\d{4}$/.test(String(row[0]).trim()));
+  if (hasOldYearColumn) {
+    showResult(
+      'Nothing was changed. Column A of "' + TRADES_TAB + '" still has years in it. ' +
+      'Change the header to "Type" and each year to "Trade" (or "Punishment"), then run this again.',
+      quiet
+    );
+    return;
+  }
+
+  const { owners, punishments } = readOwners(trades, teamNames, teamIndexByName, badRows);
 
   const cells = board.getRange(FIRST_ROUND_ROW, FIRST_TEAM_COLUMN, TOTAL_ROUNDS, TEAM_COUNT);
   const values = cells.getDisplayValues();
@@ -69,13 +83,18 @@ function fillBoard(quiet) {
       const address = columnLetter(FIRST_TEAM_COLUMN + c) + (FIRST_ROUND_ROW + r);
       const label = address + ' (' + teamNames[c] + ', round ' + (r + 1) + ')';
       const owner = owners[r][c];
-      const isTraded = owner !== c;
+      const isPunished = owner === PUNISHED;
+      const isTraded = !isPunished && owner !== c;
 
-      // only empty or marker-only cells are ours to change
+      // only empty, marker-only, or "NO PICK ..." cells are ours to change
       const hasFormula = formulas[r][c] !== '';
-      const isOurs = !hasFormula && (trimmed === '' || isMarkerOnly(trimmed, teamIndexByName));
+      const isScriptText = isMarkerOnly(trimmed, teamIndexByName) || isPunishmentText(trimmed);
+      const isOurs = !hasFormula && (trimmed === '' || isScriptText);
 
       let wanted = '';
+      if (isPunished) {
+        wanted = punishments[r][c];
+      }
       if (isTraded) {
         wanted = markerFor(teamNames[owner]);
       }
@@ -93,7 +112,11 @@ function fillBoard(quiet) {
         continue;
       }
 
-      // someone typed something here. only mention it when its marker doesn't match the trades tab.
+      // someone typed something here, like a retired player autopicked into a
+      // punished slot. only mention it when its marker doesn't match the trades tab.
+      if (isPunished) {
+        continue;
+      }
       const typedOwner = markerTeam(trimmed, teamIndexByName);
       const matches = (isTraded && typedOwner === owner) || (!isTraded && typedOwner === -1);
       if (!matches) {
@@ -226,24 +249,42 @@ function isMarkerOnly(text, teamIndexByName) {
   return markerTeam(text, teamIndexByName) !== -1;
 }
 
+// a punishment cell the script wrote, like "NO PICK - Punishment"
+function isPunishmentText(text) {
+  return /^no pick\b/i.test(text);
+}
+
+function punishmentText(notes) {
+  if (notes === '') {
+    return 'NO PICK - Punishment';
+  }
+  return 'NO PICK - ' + notes;
+}
+
 function isWholeNumber(text) {
   return /^\d+$/.test(text);
 }
 
-// owners[round - 1][column] = team index that owns the pick now
+// columns: A Type (Trade or Punishment), B Round, C Original Team,
+// D New Owner (blank for a punishment), E Notes.
+// owners[round - 1][column] = team index that owns the pick now, or PUNISHED.
+// punishments[round - 1][column] = the "NO PICK - ..." text for a punished pick.
 function readOwners(trades, teamNames, teamIndexByName, badRows) {
   const owners = [];
+  const punishments = [];
   for (let r = 0; r < TOTAL_ROUNDS; r++) {
     owners.push(teamNames.map((name, i) => i));
+    punishments.push(teamNames.map(() => ''));
   }
 
   // row 1 is headers. rows go top to bottom, so the lowest row wins.
   for (let i = 1; i < trades.length; i++) {
     const row = trades[i].map(cell => String(cell).trim());
-    const year = row[0] || '';
+    const type = (row[0] || '').toLowerCase();
     const round = row[1] || '';
     const original = row[2] || '';
     const newOwner = row[3] || '';
+    const notes = row[4] || '';
 
     const isBlank = row.every(cell => cell === '');
     if (isBlank) {
@@ -251,8 +292,10 @@ function readOwners(trades, teamNames, teamIndexByName, badRows) {
     }
 
     const problems = [];
-    if (!isWholeNumber(year)) {
-      problems.push('bad year "' + year + '"');
+    const isTrade = type === 'trade';
+    const isPunishment = type === 'punishment';
+    if (!isTrade && !isPunishment) {
+      problems.push('bad type "' + row[0] + '" (should be Trade or Punishment)');
     }
     const roundNumber = Number(round);
     const roundOk = isWholeNumber(round) && roundNumber >= 1 && roundNumber <= TOTAL_ROUNDS;
@@ -262,7 +305,7 @@ function readOwners(trades, teamNames, teamIndexByName, badRows) {
     if (!(normalizeName(original) in teamIndexByName)) {
       problems.push('unknown original team "' + original + '"');
     }
-    if (!(normalizeName(newOwner) in teamIndexByName)) {
+    if (isTrade && !(normalizeName(newOwner) in teamIndexByName)) {
       problems.push('unknown new owner "' + newOwner + '"');
     }
 
@@ -270,14 +313,16 @@ function readOwners(trades, teamNames, teamIndexByName, badRows) {
       badRows.push('Row ' + (i + 1) + ': ' + problems.join(', '));
       continue;
     }
-    if (Number(year) !== DRAFT_YEAR) {
-      continue;
-    }
 
     const column = teamIndexByName[normalizeName(original)];
-    owners[roundNumber - 1][column] = teamIndexByName[normalizeName(newOwner)];
+    if (isPunishment) {
+      owners[roundNumber - 1][column] = PUNISHED;
+      punishments[roundNumber - 1][column] = punishmentText(notes);
+    } else {
+      owners[roundNumber - 1][column] = teamIndexByName[normalizeName(newOwner)];
+    }
   }
-  return owners;
+  return { owners, punishments };
 }
 
 function onOpen() {

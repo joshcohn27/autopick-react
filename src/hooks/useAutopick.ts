@@ -121,7 +121,7 @@ export function useAutopick() {
   let trades: PickTrade[] | null = null;
   let ownerOf: PickOwnerLookup | undefined;
   if (tradeLogRows) {
-    trades = parseTradeRows(tradeLogRows, teams, CONFIG.TOTAL_ROUNDS).trades;
+    trades = parseTradeRows(tradeLogRows, teams, CONFIG.TOTAL_ROUNDS, CONFIG.DRAFT_YEAR).trades;
     ownerOf = pickOwnerLookup(teams, CONFIG.DRAFT_YEAR, trades);
   }
 

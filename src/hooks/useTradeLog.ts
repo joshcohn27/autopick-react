@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CONFIG } from '../config';
-import { fetchTradeLog } from '../lib/sheets';
+import { fetchTradeLogs } from '../lib/sheets';
 
-// raw Trades tab rows, refetched on an interval for as long as the
-// component using this is mounted
+export interface TradeLog {
+  year: number;
+  values: unknown[][];
+}
+
+// raw rows from every "<year> Trades" tab (this year and later), refetched on
+// an interval for as long as the component using this is mounted
 export function useTradeLog() {
-  const [rows, setRows] = useState<unknown[][]>([]);
+  const [logs, setLogs] = useState<TradeLog[]>([]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -13,8 +18,8 @@ export function useTradeLog() {
 
   // background loads stay quiet, only the refresh button shows "fetching"
   const load = useCallback(() => {
-    function handleRows(values: unknown[][]) {
-      setRows(values);
+    function handleLogs(values: TradeLog[]) {
+      setLogs(values);
       setLastUpdatedAt(Date.now());
       setErrorMessage(null);
     }
@@ -33,7 +38,7 @@ export function useTradeLog() {
       setIsRefreshing(false);
     }
 
-    return fetchTradeLog().then(handleRows, handleError).then(finish);
+    return fetchTradeLogs().then(handleLogs, handleError).then(finish);
   }, []);
 
   const refresh = useCallback(() => {
@@ -47,5 +52,5 @@ export function useTradeLog() {
     return () => window.clearInterval(handle);
   }, [load]);
 
-  return { rows, hasLoaded, isRefreshing, errorMessage, lastUpdatedAt, refresh };
+  return { logs, hasLoaded, isRefreshing, errorMessage, lastUpdatedAt, refresh };
 }
